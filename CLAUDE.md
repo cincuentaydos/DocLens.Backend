@@ -8,7 +8,18 @@ Un despacho (tenant) centraliza sus Procesos (expedientes), Clientes y Documento
 - **Documentación en español**: READMEs, `docs/`, ADRs, este fichero y los `CLAUDE.md`, y las descripciones de pull requests.
 - **Código en inglés**: código, identificadores (clases, métodos, variables, recursos y variables de Terraform), nombres de ficheros de código, comentarios en el código y mensajes de commit.
 - Los términos técnicos se mantienen en su forma original (p. ej. *presigned URL*, *event source mapping*, *Data API*).
-- Excepción heredada del modelo de datos: las tablas y columnas de Aurora están en español (`documentos`, `documento_versiones`, `empresa_id`, `estado`…), definidas en `DocLens.Infra/migrations`. No renombrarlas sin una migración.
+
+## Nomenclatura
+
+Fuente de verdad: [`docs/glosario.md`](docs/glosario.md) (término de negocio en español ↔ término en código en inglés).
+
+- **Estructura y estado del sistema en inglés**: tablas, columnas, restricciones, índices, tabla de control de migraciones y valores de estado del sistema (escaneo de malware y procesamiento: `PENDING`, `CLEAN`, `PROCESSED`, `REJECTED`). Esquema actual (`DocLens.Infra/migrations/002_documents.sql`):
+  - `documents`: `id`, `tenant_id`, `latest_version`, `created_at`, `updated_at`.
+  - `document_versions`: `id`, `document_id`, `version_number`, `s3_key`, `content_type`, `status`, `created_at`, `updated_at`.
+- **Contenido de negocio en español como dato**: el contenido extraído de los documentos y los valores de dominio que ve el usuario (p. ej. tipos de documento `contrato`, `escrito`) son datos, no esquema. Las claves JSON de la extracción van en inglés; los valores conservan el idioma original del documento.
+- **Código en inglés** (clases, métodos, variables, parámetros SQL, comentarios, commits) y **documentación en español**.
+- Pendiente de decisión, no tocar sin acordarlo: atributos de Cognito `custom:tipoUsuario`/`custom:clienteId` (`custom:tenantId` ya está en inglés), la tabla `kb.embeddings` (`chunk_texto`), el rediseño del enum `DocumentType` y el de los estados de ADR-011.
+- Cambiar un nombre persistido exige una migración nueva en `DocLens.Infra/migrations` y el cambio de código en el mismo ciclo.
 
 ## Stack tecnológico
 
@@ -45,7 +56,7 @@ DocLens.slnx
 ## Decisiones de arquitectura
 
 - **Diseño de dentro hacia fuera:** primero la lógica de extracción, después el cableado de infraestructura.
-- **Silo lógico multi-tenant:** el `tenantId` del JWT de Cognito (`empresa_id` en Aurora) se propaga a todas las capas: prefijo S3, filas de Aurora (toda consulta filtra por `empresa_id`), filtro de metadatos de la Knowledge Base y logs.
+- **Silo lógico multi-tenant:** el `tenantId` del JWT de Cognito (`tenant_id` en Aurora) se propaga a todas las capas: prefijo S3, filas de Aurora (toda consulta filtra por `tenant_id`), filtro de metadatos de la Knowledge Base y logs.
 - **Extracción asíncrona dirigida por eventos (objetivo, ADR-011):** el resultado de GuardDuty dispara el pipeline vía EventBridge → SQS → Processor. Estado actual: el Processor solo marca la versión como `CLEAN`, y la extracción se ejecuta de forma síncrona en `POST /api/documents/process`, que **sí existe** y exige que la versión sea del tenant y esté `CLEAN`/`PROCESSED`.
 - **Sin agente autónomo:** el flujo de IA es explícito y orquestado por el backend — autorizar → recuperar de la Knowledge Base → generar con Claude → devolver con fuentes citadas (ADR-012).
 - **Entornos:** solo `sbx` y `prod`.

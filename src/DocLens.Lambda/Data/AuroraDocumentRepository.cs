@@ -4,7 +4,7 @@ using Amazon.RDSDataService.Model;
 namespace DocLens.Lambda.Data;
 
 // RDS Data API implementation (ADR-008). Every statement is scoped by
-// empresa_id so a caller can never touch another tenant's rows, and every
+// tenant_id so a caller can never touch another tenant's rows, and every
 // multi-statement write runs inside a Data API transaction.
 public class AuroraDocumentRepository : IDocumentRepository
 {
@@ -41,8 +41,8 @@ public class AuroraDocumentRepository : IDocumentRepository
         return InTransactionAsync(async transactionId =>
         {
             var inserted = await ExecuteAsync(
-                "INSERT INTO documentos (empresa_id, latest_version) VALUES (:empresaId, 1) RETURNING id::text",
-                [Text("empresaId", tenantId)],
+                "INSERT INTO documents (tenant_id, latest_version) VALUES (:tenantId, 1) RETURNING id::text",
+                [Text("tenantId", tenantId)],
                 transactionId,
                 cancellationToken);
 
@@ -67,12 +67,12 @@ public class AuroraDocumentRepository : IDocumentRepository
             // is held until the transaction commits.
             var updated = await ExecuteAsync(
                 """
-                UPDATE documentos
-                SET latest_version = latest_version + 1, actualizado_en = now()
-                WHERE id = :id::uuid AND empresa_id = :empresaId
+                UPDATE documents
+                SET latest_version = latest_version + 1, updated_at = now()
+                WHERE id = :documentId::uuid AND tenant_id = :tenantId
                 RETURNING latest_version
                 """,
-                [Text("id", documentId.ToString()), Text("empresaId", tenantId)],
+                [Text("documentId", documentId.ToString()), Text("tenantId", tenantId)],
                 transactionId,
                 cancellationToken);
 
@@ -96,12 +96,12 @@ public class AuroraDocumentRepository : IDocumentRepository
     {
         var response = await ExecuteAsync(
             """
-            SELECT v.estado
-            FROM documento_versiones v
-            JOIN documentos d ON d.id = v.documento_id
-            WHERE d.id = :id::uuid AND d.empresa_id = :empresaId AND v.s3_key = :s3Key
+            SELECT v.status
+            FROM document_versions v
+            JOIN documents d ON d.id = v.document_id
+            WHERE d.id = :documentId::uuid AND d.tenant_id = :tenantId AND v.s3_key = :s3Key
             """,
-            [Text("id", documentId.ToString()), Text("empresaId", tenantId), Text("s3Key", s3Key)],
+            [Text("documentId", documentId.ToString()), Text("tenantId", tenantId), Text("s3Key", s3Key)],
             transactionId: null,
             cancellationToken);
 
@@ -118,17 +118,17 @@ public class AuroraDocumentRepository : IDocumentRepository
     {
         var response = await ExecuteAsync(
             """
-            UPDATE documento_versiones v
-            SET estado = :toStatus, actualizado_en = now()
-            FROM documentos d
-            WHERE d.id = v.documento_id
-              AND d.id = :id::uuid AND d.empresa_id = :empresaId
-              AND v.s3_key = :s3Key AND v.estado = :fromStatus
+            UPDATE document_versions v
+            SET status = :toStatus, updated_at = now()
+            FROM documents d
+            WHERE d.id = v.document_id
+              AND d.id = :documentId::uuid AND d.tenant_id = :tenantId
+              AND v.s3_key = :s3Key AND v.status = :fromStatus
             """,
             [
                 Text("toStatus", toStatus),
-                Text("id", documentId.ToString()),
-                Text("empresaId", tenantId),
+                Text("documentId", documentId.ToString()),
+                Text("tenantId", tenantId),
                 Text("s3Key", s3Key),
                 Text("fromStatus", fromStatus)
             ],
@@ -144,12 +144,12 @@ public class AuroraDocumentRepository : IDocumentRepository
     {
         return ExecuteAsync(
             """
-            INSERT INTO documento_versiones (documento_id, version_numero, s3_key, content_type, estado)
-            VALUES (:documentoId::uuid, :versionNumero, :s3Key, :contentType, 'PENDING')
+            INSERT INTO document_versions (document_id, version_number, s3_key, content_type, status)
+            VALUES (:documentId::uuid, :versionNumber, :s3Key, :contentType, 'PENDING')
             """,
             [
-                Text("documentoId", documentId.ToString()),
-                new SqlParameter { Name = "versionNumero", Value = new Field { LongValue = versionNumber } },
+                Text("documentId", documentId.ToString()),
+                new SqlParameter { Name = "versionNumber", Value = new Field { LongValue = versionNumber } },
                 Text("s3Key", s3Key),
                 Text("contentType", contentType)
             ],

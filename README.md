@@ -42,12 +42,12 @@ modificarla.
 
 - `POST /api/documents/prepare`: genera una URL prefirmada de subida (ADR-005).
   La versión se crea en una transacción del RDS Data API con incremento
-  atómico de `latest_version`, siempre filtrando por `empresa_id`.
+  atómico de `latest_version`, siempre filtrando por `tenant_id`.
 - `POST /api/documents/process`: extrae datos estructurados. Solo se permite si:
   - `documentId` es un UUID (si no, **400**);
   - `s3Key` sigue la convención `{tenantId}/documents/{documentId}/v{n}.{ext}`
     del tenant y documento del llamante (si no, **403**);
-  - existe la fila en `documento_versiones` para ese tenant (si no, **404**);
+  - existe la fila en `document_versions` para ese tenant (si no, **404**);
   - GuardDuty ya marcó la versión como limpia (`CLEAN`/`PROCESSED`; si no, **409**).
 
 Swagger (`/swagger`) solo se sirve en local (`Development`) o cuando Terraform
@@ -67,7 +67,7 @@ Variables de entorno necesarias: `DOCUMENT_BUCKET`, `AURORA_CLUSTER`,
 
 ## Esquema de base de datos
 
-Las tablas `documentos` y `documento_versiones` (y el esquema `kb` de la Knowledge
+Las tablas `documents` y `document_versions` (y el esquema `kb` de la Knowledge
 Base) se crean con las migraciones SQL de `DocLens.Infra/migrations`. Deben
 aplicarse antes de usar la API.
 

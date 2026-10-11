@@ -55,7 +55,7 @@ Extensions/              # Registro de DI (ServiceCollectionExtensions)
 Todo servicio que toque datos **debe** recibir `ITenantContext` por constructor e incluir `TenantId` en claves de almacenamiento, logs y respuestas.
 
 - Clave S3: `{tenantId}/documents/{documentId}/v{versionNumber}.{extension}` — construirla y validarla siempre con `Models/DocumentKey.cs`.
-- Aurora: toda consulta filtra por `empresa_id` (= `tenantId`). No se usa DynamoDB.
+- Aurora: toda consulta filtra por `tenant_id` (= claim `custom:tenantId`). No se usa DynamoDB. Tablas `documents` y `document_versions`; nomenclatura en `docs/glosario.md` y en la sección "Nomenclatura" del `CLAUDE.md` raíz.
 
 ## Añadir un tipo de documento
 

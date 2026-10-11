@@ -9,7 +9,7 @@ public interface IDocumentRepository
         Func<Guid, int, string> s3KeyFactory,
         CancellationToken cancellationToken = default);
 
-    // Atomically increments documentos.latest_version for a document owned by
+    // Atomically increments documents.latest_version for a document owned by
     // tenantId and inserts the matching version row, in a single transaction.
     // Returns null when the document doesn't exist for that tenant.
     Task<DocumentVersionRecord?> AddVersionAsync(
@@ -19,7 +19,7 @@ public interface IDocumentRepository
         Func<Guid, int, string> s3KeyFactory,
         CancellationToken cancellationToken = default);
 
-    // Status (documento_versiones.estado) of the version stored at s3Key, or
+    // Status (document_versions.status) of the version stored at s3Key, or
     // null when no such version exists for that tenant and document.
     Task<string?> GetVersionStatusAsync(
         string tenantId,

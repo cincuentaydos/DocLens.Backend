@@ -1,6 +1,8 @@
 namespace DocLens.Lambda.Models;
 
-// Values stored in documento_versiones.estado (see DocLens.Infra/migrations).
+// System status values stored in document_versions.status (CHECK constraint
+// document_versions_status_check in DocLens.Infra/migrations/002_documents.sql).
+// They are system state, not business content, so they stay English.
 public static class DocumentVersionStatus
 {
     // Presigned URL issued; object not uploaded or not yet scanned by GuardDuty.

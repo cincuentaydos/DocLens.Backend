@@ -77,6 +77,8 @@ public class BedrockSemanticAnalysisService : ISemanticAnalysisService
         return $"""
             Extract the following fields from this {documentType} document: {fields}.
             Return a JSON object where each key is a field name and each value is the extracted text.
+            Use the field names above, in English, exactly as written as the JSON keys.
+            Keep every value in the document's original language; do not translate it.
             If a field is not found, use an empty string as its value.
             Return only the JSON object, no additional text.
 
