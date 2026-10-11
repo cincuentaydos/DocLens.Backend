@@ -1,60 +1,77 @@
 # DocLens.Lambda
 
-The core Lambda function. Receives document processing requests via API Gateway (HTTP API v2), runs OCR through Textract, semantic analysis through Bedrock, and returns structured data.
+Binario único de las tres Lambdas. `Program.cs` elige el rol con `DOCLENS_FUNCTION_ROLE` (fallback: `AWS_LAMBDA_FUNCTION_NAME`):
 
-## Entry point
+| Rol | Qué hace |
+|---|---|
+| `api` | Host ASP.NET Core minimal API (HTTP API v2) con `TenantMiddleware` y las rutas bajo `/api` |
+| `processor` | Consume la cola de GuardDuty (`Workers/ProcessorHandler.cs`) y pasa la versión de `PENDING` a `CLEAN` |
+| `ocr_result` | Consume las notificaciones de Textract vía SNS/SQS (`Workers/OcrResultHandler.cs`); por ahora solo las registra |
 
-`Program.cs` — Minimal APIs host with Lambda hosting, tenant middleware, and endpoint registration.
+Los roles SQS usan `Workers/WorkerHost.cs` (Lambda RuntimeSupport) y devuelven `SQSBatchResponse` (fallos por mensaje).
 
-## Request flow
-
-```
-API Gateway → TenantMiddleware → Endpoint → DocumentExtractionService
-                                                ├── TextractOcrService   (raw text)
-                                                └── BedrockSemanticAnalysisService  (structured fields)
-```
-
-## Directory layout
+## Flujo de peticiones (rol `api`)
 
 ```
-Endpoints/               # Route definitions — one file per domain area
+API Gateway (JWT) → TenantMiddleware → Endpoint
+  POST /api/documents/prepare → DocumentUploadService → IDocumentRepository (transacción) → presigned URL
+  POST /api/documents/process → DocumentAccessGuard → DocumentExtractionService
+                                                        ├── TextractOcrService              (texto)
+                                                        └── BedrockSemanticAnalysisService  (campos estructurados)
+```
+
+`DocumentAccessGuard` devuelve 400 (`documentId` no UUID), 403 (clave fuera del prefijo del tenant/documento), 404 (sin fila de versión) o 409 (versión aún no `CLEAN`).
+
+## Estructura
+
+```
+Endpoints/               # Definición de rutas — un fichero por área
 Models/
-  Requests/              # Inbound DTOs (records)
-  Responses/             # Outbound DTOs (records)
+  Requests/              # DTOs de entrada (records)
+  Responses/             # DTOs de salida (records)
+  DocumentKey.cs         # Convención de claves S3 (Build/TryParse)
+  DocumentVersionStatus.cs
+Data/                    # IDocumentRepository + AuroraDocumentRepository (RDS Data API)
 Services/
-  Extraction/            # Orchestration: IDocumentExtractionService
-  Ocr/                   # Textract wrapper: IOcrService
-  Semantic/              # Bedrock wrapper: ISemanticAnalysisService
-Context/                 # Tenant resolution (TenantContext, TenantMiddleware)
-Extensions/              # DI registration (ServiceCollectionExtensions)
+  Access/                # DocumentAccessGuard
+  Extraction/            # Orquestación: IDocumentExtractionService
+  Ocr/                   # Wrapper de Textract: IOcrService
+  Semantic/              # Wrapper de Bedrock + BedrockResponseParser
+  Upload/                # DocumentUploadService
+Workers/                 # FunctionRole, WorkerHost, ProcessorHandler, OcrResultHandler
+Context/                 # Resolución de tenant (TenantContext, TenantMiddleware)
+Extensions/              # Registro de DI (ServiceCollectionExtensions)
 ```
 
-## Adding a new endpoint
+## Añadir un endpoint
 
-1. Add the route to the relevant file in `Endpoints/` (or create a new one for a new domain).
-2. Register it in `MapDocumentEndpoints` (or add a new `Map*Endpoints` extension and call it from `Program.cs`).
-3. Create request/response records in `Models/`.
-4. Implement the backing service under `Services/`.
+1. Añadir la ruta en el fichero correspondiente de `Endpoints/` (o crear uno nuevo para un área nueva).
+2. Registrarla en `MapDocumentEndpoints` (o en una nueva extensión `Map*Endpoints` llamada desde el grupo `/api` de `Program.cs`).
+3. Crear los records de petición/respuesta en `Models/`.
+4. Implementar el servicio en `Services/` y, si toca datos, el acceso en `Data/`.
 
-## Multi-tenant rule
+## Regla multi-tenant
 
-Every service that touches data **must** receive `ITenantContext` via constructor injection and include `TenantId` in all storage keys, log statements, and response objects.
+Todo servicio que toque datos **debe** recibir `ITenantContext` por constructor e incluir `TenantId` en claves de almacenamiento, logs y respuestas.
 
-S3 key convention: `{tenantId}/{year}/{month}/{documentId}.pdf`
-DynamoDB PK convention: `TENANT#{tenantId}`
+- Clave S3: `{tenantId}/documents/{documentId}/v{versionNumber}.{extension}` — construirla y validarla siempre con `Models/DocumentKey.cs`.
+- Aurora: toda consulta filtra por `tenant_id` (= claim `custom:tenantId`). No se usa DynamoDB. Tablas `documents` y `document_versions`; nomenclatura en `docs/glosario.md` y en la sección "Nomenclatura" del `CLAUDE.md` raíz.
 
-## Adding a new document type
+## Añadir un tipo de documento
 
-1. Add the variant to `Models/DocumentType.cs`.
-2. Add a matching `case` in `BedrockSemanticAnalysisService.BuildPrompt` with the relevant extraction fields.
+1. Añadir la variante en `Models/DocumentType.cs`.
+2. Añadir el `case` correspondiente en `BedrockSemanticAnalysisService.BuildPrompt` con los campos a extraer.
 
-## AWS SDK pattern
+## Formatos y extracción
 
-Services receive SDK clients via constructor injection (`IAmazonTextract`, `IAmazonBedrockRuntime`).
-Never instantiate AWS clients directly — always use DI.
+`Models/SupportedDocumentFormats.cs` define los tipos admitidos en la subida (pdf, md, txt, docx, pptx, xlsx, png, jpg, tiff). La extracción actual solo usa Textract `DetectDocumentText` (imágenes y PDF de una página); PdfPig, el parseo nativo de Office/Markdown y el flujo asíncrono de Textract están pendientes (ADR-003).
 
-## Testing
+## Patrón del AWS SDK
 
-- Unit tests in `tests/DocLens.Lambda.Tests/`.
-- Mock all AWS SDK interfaces with NSubstitute — never make real AWS calls in tests.
-- Each service test file mirrors the `Services/` layout.
+Los servicios reciben los clientes por inyección (`IAmazonTextract`, `IAmazonBedrockRuntime`, `IAmazonS3`, `IAmazonRDSDataService`).
+Nunca instanciar clientes de AWS directamente: usar siempre DI.
+
+## Pruebas
+
+- Pruebas unitarias en `tests/DocLens.Lambda.Tests/`, reflejando la estructura de `src/` (`Models/`, `Services/`, `Workers/`).
+- Simular todas las interfaces del AWS SDK y `IDocumentRepository` con NSubstitute: nunca llamadas reales a AWS en las pruebas.

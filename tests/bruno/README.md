@@ -1,27 +1,28 @@
-# DocLens API — Bruno collection
+# DocLens API — colección Bruno
 
-Open this folder directly in [Bruno](https://www.usebruno.com/) (File → Open Collection).
+Abrir esta carpeta directamente en [Bruno](https://www.usebruno.com/)
+(File → Open Collection).
 
-## Setup
+## Preparación
 
-1. Select the **sbx** environment (top-right dropdown).
-2. Click the environment, open **Configure**, and fill in `testPassword` under
-   the secret variables — value is in the team's password manager, not
-   committed here on purpose (see `environments/sbx.bru`).
+1. Seleccionar el entorno **sbx** (desplegable arriba a la derecha).
+2. Abrir el entorno, **Configure**, y rellenar `testPassword` en las variables
+   secretas. El valor está en el gestor de contraseñas del equipo y no se
+   versiona a propósito (ver `environments/sbx.bru`).
 
-## Running the smoke test
+## Prueba de humo
 
-1. **Auth / Get Token** — logs in as the `test@doclens.org` Cognito test user
-   (`custom:tenantId=test-tenant`) and stores the returned `IdToken` as an
-   environment variable the other requests reuse.
-2. **Smoke / Swagger Health** — unauthenticated reachability check.
-3. **Smoke / Process Document** — authenticated call to the one real endpoint
-   (`POST /documents/process`). The `s3Key` in the request body doesn't point
-   at a real object yet, so this won't return `200` until one is uploaded to
-   the document bucket — that's expected. What it proves at this stage: the
-   JWT authorizer, `TenantMiddleware`, and the Lambda handler itself are all
-   wired correctly (i.e. failures here are business-logic failures, not
-   auth/routing failures).
+1. **Auth / Get Token**: inicia sesión con el usuario de prueba de Cognito
+   `test@doclens.org` (`custom:tenantId=test-tenant`) y guarda el `IdToken`
+   devuelto como variable de entorno para el resto de peticiones.
+2. **Smoke / Swagger Health**: comprobación de disponibilidad sin
+   autenticación (solo en sbx, donde `enable_swagger=true`).
+3. **Smoke / Process Document**: llamada autenticada a
+   `POST /api/documents/process`. El `documentId`/`s3Key` no corresponde a una
+   versión preparada, así que responde `404` (o `409` si la versión aún no ha
+   pasado el análisis de malware). Lo que demuestra: el autorizador JWT,
+   `TenantMiddleware` y el handler están bien conectados (no es un fallo de
+   autenticación ni de enrutamiento).
 
-Run **Auth / Get Token** before **Smoke / Process Document** — the latter
-depends on `{{idToken}}` being set.
+Ejecutar **Auth / Get Token** antes de **Smoke / Process Document**: la segunda
+depende de `{{idToken}}`.

@@ -44,3 +44,14 @@ local.settings.json
 # Lambda publish output
 publish/
 lambda-publish/
+
+# Terraform — local working dirs, state and plan files (a saved plan embeds a
+# full copy of the state: account ID, ARNs, sometimes secrets). Never commit.
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+tfplan.*
+*.tfplan
+crash.log
+crash.*.log

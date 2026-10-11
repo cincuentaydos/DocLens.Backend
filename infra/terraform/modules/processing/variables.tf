@@ -35,30 +35,31 @@ variable "kms_key_arn" {
 variable "lambda_zip_path" {
   description = <<-EOT
     Path to the single Lambda deployment ZIP shared by all three functions
-    below (API, Processor, OCR result) — each just points at a different
-    handler inside the same published .NET assembly.
-    Build with: dotnet publish src/DocLens.Lambda -c Release -o /tmp/lambda-out
-    then: zip -j /tmp/doclens-lambda.zip /tmp/lambda-out/*
+    below (API, Processor, OCR result) — the same `bootstrap` binary runs in
+    all three and picks its role from DOCLENS_FUNCTION_ROLE (lambdas.tf).
+    Must be a self-contained linux-x64 publish whose entry binary is named
+    `bootstrap` (see infra/README.md). Ignored after the functions exist —
+    CI deploys code via UpdateFunctionCode.
   EOT
   type        = string
 }
 
 variable "api_handler" {
-  description = "Lambda handler string for the API Lambda (ASP.NET Core minimal API host, all Procesos/Clientes/Documentos/Usuarios/IA routes — see projects/lambda.md)."
+  description = "Lambda handler string for the API Lambda (ASP.NET Core minimal API host, all Procesos/Clientes/Documentos/Usuarios/IA routes — see projects/lambda.md). Informational only: provided.al2023 always runs `bootstrap`; the role comes from DOCLENS_FUNCTION_ROLE."
   type        = string
-  default     = "DocLens.Lambda::DocLens.Lambda.LambdaEntryPoint::FunctionHandlerAsync"
+  default     = "bootstrap"
 }
 
 variable "processor_handler" {
-  description = "Lambda handler string for the Processor Lambda (SQS consumer — OCR + semantic extraction, see ADR-011)."
+  description = "Lambda handler string for the Processor Lambda (SQS consumer — OCR + semantic extraction, see ADR-011). Informational only: provided.al2023 always runs `bootstrap`; the role comes from DOCLENS_FUNCTION_ROLE."
   type        = string
-  default     = "DocLens.Lambda::DocLens.Lambda.ProcessorHandler::HandleAsync"
+  default     = "bootstrap"
 }
 
 variable "ocr_result_handler" {
-  description = "Lambda handler string for the OCR async result Lambda (Textract StartDocumentTextDetection completion via SNS/SQS — see ADR-003)."
+  description = "Lambda handler string for the OCR async result Lambda (Textract StartDocumentTextDetection completion via SNS/SQS — see ADR-003). Informational only: provided.al2023 always runs `bootstrap`; the role comes from DOCLENS_FUNCTION_ROLE."
   type        = string
-  default     = "DocLens.Lambda::DocLens.Lambda.OcrResultHandler::HandleAsync"
+  default     = "bootstrap"
 }
 
 variable "embedding_model_id" {
@@ -71,4 +72,16 @@ variable "chat_model_id" {
   description = "Bedrock Claude model used for semantic extraction, chat and drafting. A cross-region inference profile ID (region-prefixed, e.g. \"eu.anthropic...\") — several current Claude models reject direct on-demand invocation by bare foundation model ID (\"The provided model identifier is invalid\"). See iam.tf's chat_model_foundation_id local for why both ARN shapes need bedrock:InvokeModel."
   type        = string
   default     = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+}
+
+variable "cors_allow_origins" {
+  description = "Origins allowed by the HTTP API's CORS configuration. Empty disables CORS (CloudFront serves the frontend and /api/* from the same origin)."
+  type        = list(string)
+  default     = []
+}
+
+variable "enable_swagger" {
+  description = "Route GET /swagger without a JWT and let the app serve Swagger UI. Must stay false in prod."
+  type        = bool
+  default     = false
 }
