@@ -1,79 +1,78 @@
-# DocLens — Project 52
+# DocLens — Proyecto 52
 
-Multi-tenant AI platform for legal case management, on AWS Serverless.
-A law firm (tenant) centralizes its Procesos (cases), Clientes, and Documentos, and uses AI to classify documents, extract data, summarize, answer contextual questions about a case, and draft first versions of documents/communications. See `DocLens.Docs` (ADR-001…013) for the full architecture.
+Plataforma multi-tenant de IA para la gestión de expedientes jurídicos sobre AWS Serverless.
+Un despacho (tenant) centraliza sus Procesos (expedientes), Clientes y Documentos, y usa IA para clasificar documentos, extraer datos, resumir, responder preguntas contextuales sobre un expediente y redactar primeras versiones de documentos/comunicaciones. Ver `DocLens.Docs` (ADR-001…014) para la arquitectura completa.
 
-## Language rule
+## Norma de idioma
 
-**All code, comments, variable names, file names, commit messages, and documentation must be written in English.** No exceptions.
+- **Documentación en español**: READMEs, `docs/`, ADRs, este fichero y los `CLAUDE.md`, y las descripciones de pull requests.
+- **Código en inglés**: código, identificadores (clases, métodos, variables, recursos y variables de Terraform), nombres de ficheros de código, comentarios en el código y mensajes de commit.
+- Los términos técnicos se mantienen en su forma original (p. ej. *presigned URL*, *event source mapping*, *Data API*).
+- Excepción heredada del modelo de datos: las tablas y columnas de Aurora están en español (`documentos`, `documento_versiones`, `empresa_id`, `estado`…), definidas en `DocLens.Infra/migrations`. No renombrarlas sin una migración.
 
-## Tech stack
+## Stack tecnológico
 
-| Layer | Technology |
+| Capa | Tecnología |
 |---|---|
-| Compute | AWS Lambda (.NET 10) — API Lambda + Processor Lambda (ADR-010) |
-| API entry | Amazon API Gateway (HTTP API v2), single catch-all route, JWT authorizer |
-| Identity | Amazon Cognito (JWT with `custom:tenantId`, `custom:tipoUsuario`, `custom:clienteId` claims) |
-| Text extraction | PdfPig (digital PDF) → Amazon Textract fallback; native parse for `.md`/`.docx`/etc. (ADR-003) |
-| AI analysis | Amazon Bedrock (Claude via `InvokeModel`); no autonomous agent (ADR-012) |
-| RAG | Amazon Bedrock Knowledge Bases, Aurora + pgvector as the vector store (ADR-001/008) |
-| Operational DB + vector store | Amazon Aurora PostgreSQL Serverless v2 + pgvector, reached via the RDS Data API (ADR-008) |
-| Document storage | Amazon S3 (versioned) |
-| Processing trigger | GuardDuty Malware Protection → EventBridge → SQS → Processor Lambda (ADR-011) — no client-called `/process` endpoint |
+| Cómputo | AWS Lambda (.NET 10, runtime `provided.al2023`, publicación self-contained) — un único binario para las Lambdas de API, Processor y OCR result (ADR-010) |
+| Entrada del API | Amazon API Gateway (HTTP API v2), ruta `$default` con autorizador JWT; rutas de negocio bajo `/api` |
+| Identidad | Amazon Cognito (JWT con claims `custom:tenantId`, `custom:tipoUsuario`, `custom:clienteId`) |
+| Extracción de texto | Amazon Textract `DetectDocumentText` síncrono (una página) en `TextractOcrService`. **Aún no implementado**: PdfPig para PDF digital, parseo nativo de `.md`/`.docx`/`.pptx`/`.xlsx` y el flujo asíncrono `StartDocumentTextDetection` (ADR-003) |
+| Análisis IA | Amazon Bedrock (Claude vía `InvokeModel`, perfil de inferencia `CHAT_MODEL_ID`); sin agente autónomo (ADR-012) |
+| RAG | Amazon Bedrock Knowledge Bases, con Aurora + pgvector como almacén vectorial (ADR-001/008) — infraestructura en DocLens.Infra, aún sin uso desde el código |
+| BD operacional + vectorial | Amazon Aurora PostgreSQL Serverless v2 + pgvector, accedida vía RDS Data API (ADR-008). **No se usa DynamoDB** |
+| Almacenamiento de documentos | Amazon S3 (versionado, SSE-KMS) |
+| Disparador del procesamiento | GuardDuty Malware Protection → EventBridge → SQS → Lambda Processor (ADR-011) |
 | Edge | Route 53 + CloudFront + WAF + Shield Standard + ACM (ADR-009) |
-| Observability | Amazon CloudWatch + AWS X-Ray + Powertools |
-| IaC | Terraform (HCL) only — see `infra/terraform/` (the CDK scaffold has been removed, ADR-002) |
+| Observabilidad | Amazon CloudWatch (logs JSON) + AWS X-Ray |
+| IaC | Solo Terraform (HCL) — ver `infra/terraform/` (el scaffold de CDK se eliminó, ADR-002) |
 
-## Repository structure
+## Estructura del repositorio
 
 ```
 src/
-  DocLens.Lambda/          # Core Lambda — document processing API
+  DocLens.Lambda/          # Binario único de las tres Lambdas (ver src/DocLens.Lambda/CLAUDE.md)
 tests/
-  DocLens.Lambda.Tests/    # Unit tests (xUnit + NSubstitute)
+  DocLens.Lambda.Tests/    # Pruebas unitarias (xUnit + NSubstitute)
+  bruno/                   # Colección Bruno para pruebas de humo contra sbx
 infra/
-  terraform/               # Terraform — the only IaC (see infra/README.md for module layout)
+  terraform/               # Terraform — único IaC (ver infra/README.md)
+scripts/
+  package-lambda-zip.py    # Empaqueta la publicación con `bootstrap` ejecutable
 DocLens.slnx
 ```
 
-## Architecture decisions
+## Decisiones de arquitectura
 
-- **Inside-out design:** core extraction logic first, infrastructure wiring second.
-- **Multi-tenant logical silo:** `tenantId`/`empresa_id` from Cognito JWT propagates to all layers (S3 prefix, Aurora rows, Bedrock KB metadata filter, logs).
-- **Asynchronous, event-driven extraction:** GuardDuty scan completion drives the pipeline via EventBridge → SQS → Processor Lambda — no client-called processing endpoint (ADR-011).
-- **No autonomous agent:** AI flow is explicit and backend-orchestrated — authorize → retrieve from Bedrock KB → generate with Claude → return with cited sources (ADR-012).
-- **Environments:** `sbx` and `prod` only.
-- **Primary region:** `eu-west-1`, single region for V1 — no active multi-region deploy (ADR-013).
+- **Diseño de dentro hacia fuera:** primero la lógica de extracción, después el cableado de infraestructura.
+- **Silo lógico multi-tenant:** el `tenantId` del JWT de Cognito (`empresa_id` en Aurora) se propaga a todas las capas: prefijo S3, filas de Aurora (toda consulta filtra por `empresa_id`), filtro de metadatos de la Knowledge Base y logs.
+- **Extracción asíncrona dirigida por eventos (objetivo, ADR-011):** el resultado de GuardDuty dispara el pipeline vía EventBridge → SQS → Processor. Estado actual: el Processor solo marca la versión como `CLEAN`, y la extracción se ejecuta de forma síncrona en `POST /api/documents/process`, que **sí existe** y exige que la versión sea del tenant y esté `CLEAN`/`PROCESSED`.
+- **Sin agente autónomo:** el flujo de IA es explícito y orquestado por el backend — autorizar → recuperar de la Knowledge Base → generar con Claude → devolver con fuentes citadas (ADR-012).
+- **Entornos:** solo `sbx` y `prod`.
+- **Región principal:** `eu-west-1`, una sola región en la V1 (ADR-013).
 
-## Coding conventions
+## Convenciones de código
 
-- Records for immutable DTOs (`ProcessDocumentRequest`, `ExtractionResult`).
-- Interface + implementation pairs for all services (`IOcrService` / `TextractOcrService`).
-- Services registered as `Scoped`; AWS SDK clients as `Singleton` (via `AddAWSService<T>`).
-- `TenantContext` resolved per-request from `TenantMiddleware` before any service runs.
-- Structured logging with `ILogger<T>` — always include `TenantId`, `DocumentId`, and operation context.
+- Records para DTOs inmutables (`ProcessDocumentRequest`, `ExtractionResult`, `DocumentKey`).
+- Pares interfaz + implementación para todos los servicios (`IOcrService` / `TextractOcrService`, `IDocumentRepository` / `AuroraDocumentRepository`).
+- Servicios registrados como `Scoped`; clientes del AWS SDK como `Singleton` (vía `AddAWSService<T>`).
+- `TenantContext` se resuelve por petición en `TenantMiddleware` antes de ejecutar cualquier servicio.
+- Logging estructurado con `ILogger<T>`: incluir siempre `TenantId`, `DocumentId` y el contexto de la operación.
+- Escrituras de varias sentencias en Aurora dentro de una transacción del Data API (`BeginTransaction`/`CommitTransaction`/`RollbackTransaction`).
 
-## Running locally
+## Ejecución local
 
 ```bash
-# Build
 dotnet build
-
-# Test
 dotnet test
-
-# Run locally (without Lambda runtime)
-dotnet run --project src/DocLens.Lambda
+dotnet run --project src/DocLens.Lambda   # sin runtime de Lambda, rol "api", Swagger en Development
 ```
 
-## Deployment
+Variables de entorno: `DOCUMENT_BUCKET`, `AURORA_CLUSTER`, `AURORA_SECRET` (opcional `AURORA_DATABASE`), `CHAT_MODEL_ID` y credenciales de AWS.
 
-This repo's own compute (`processing` module: API/Processor/OCR-result Lambdas, API Gateway, SQS) is managed via Terraform (`infra/terraform/`) — see `infra/README.md` for setup and `sbx`/`prod` tfvars. Everything else (Cognito, Aurora, document bucket, Knowledge Base, CloudFront/WAF/DNS, and the one-time Aurora `pgvector` migration) lives in the separate `DocLens.Infra` repo — see its README for the cross-repo wiring between the two.
+## Despliegue
 
-Manual Lambda deployment (outside Terraform, for quick iteration):
-
-```bash
-dotnet lambda deploy-function --project-location src/DocLens.Lambda
-```
-
-Requires `dotnet-lambda` CLI tool: `dotnet tool install -g Amazon.Lambda.Tools`
+- **Infraestructura de este repo** (módulo `processing`: Lambdas de API/Processor/OCR result, API Gateway, SQS): Terraform en `infra/terraform/`, ver `infra/README.md` y los `tfvars` de `sbx`/`prod`. Todo lo demás (Cognito, Aurora, bucket de documentos, Knowledge Base, CloudFront/WAF/DNS y las migraciones SQL de `migrations/`) vive en el repo `DocLens.Infra`.
+- **Código**: el workflow `CD` (`.github/workflows/cd.yml`) publica la build self-contained, la sube a S3 y ejecuta `UpdateFunctionCode` en las tres funciones al hacer push a `development`. Terraform ignora `s3_key`/`source_code_hash` tras la creación.
+- **CI**: `.github/workflows/ci.yml` en cada pull request (`dotnet build`/`test`, `terraform fmt -check`, `terraform validate`).
+- No usar `dotnet lambda deploy-function` con un ZIP normal: el runtime `provided.al2023` necesita la publicación self-contained con el ejecutable `bootstrap` (ver `infra/README.md`).
