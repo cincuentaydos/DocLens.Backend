@@ -72,4 +72,6 @@ module "processing" {
   lambda_zip_path     = var.lambda_zip_path
   embedding_model_id  = var.embedding_model_id
   chat_model_id       = var.chat_model_id
+  cors_allow_origins  = var.cors_allow_origins
+  enable_swagger      = var.enable_swagger
 }

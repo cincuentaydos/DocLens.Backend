@@ -1,14 +1,17 @@
 {
   "Information": [
     "Deployment configuration for the AWS Lambda .NET CLI tool (dotnet-lambda).",
-    "Run: dotnet lambda deploy-function"
+    "Matches infra/terraform/modules/processing/lambdas.tf: self-contained linux-x64 on provided.al2023.",
+    "Run: dotnet lambda deploy-function <function-name>"
   ],
   "profile": "",
   "region": "eu-west-1",
   "configuration": "Release",
+  "framework": "net10.0",
   "function-architecture": "x86_64",
-  "function-runtime": "dotnet10",
+  "function-runtime": "provided.al2023",
+  "function-handler": "bootstrap",
   "function-memory-size": 512,
-  "function-timeout": 30,
-  "function-handler": "DocLens.Lambda"
+  "function-timeout": 29,
+  "msbuild-parameters": "--self-contained true --runtime linux-x64"
 }

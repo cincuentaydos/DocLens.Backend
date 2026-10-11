@@ -60,7 +60,7 @@ public class BedrockSemanticAnalysisService : ISemanticAnalysisService
             Body = new MemoryStream(Encoding.UTF8.GetBytes(requestBody))
         }, cancellationToken);
 
-        return ParseResponse(response.Body);
+        return BedrockResponseParser.Parse(response.Body);
     }
 
     private static string BuildPrompt(string rawText, DocumentType documentType)
@@ -83,17 +83,5 @@ public class BedrockSemanticAnalysisService : ISemanticAnalysisService
             Document text:
             {rawText}
             """;
-    }
-
-    private static Dictionary<string, string> ParseResponse(Stream responseBody)
-    {
-        using var doc = JsonDocument.Parse(responseBody);
-        var content = doc.RootElement
-            .GetProperty("content")[0]
-            .GetProperty("text")
-            .GetString() ?? "{}";
-
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(content)
-            ?? new Dictionary<string, string>();
     }
 }

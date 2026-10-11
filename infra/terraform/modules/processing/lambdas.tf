@@ -2,6 +2,15 @@
 # the note on variables.tf. `provided.al2023` is used instead of a "dotnet10"
 # runtime enum value because the pinned hashicorp/aws ~> 5.x provider does
 # not yet list it (see ADR-002 / iac-comparison.md).
+#
+# provided.al2023 always executes the `bootstrap` binary and ignores the
+# handler string, so DOCLENS_FUNCTION_ROLE tells that single binary which
+# loop to run (src/DocLens.Lambda/Workers/FunctionRole.cs).
+#
+# Code is deployed by CI (.github/workflows/cd.yml -> UpdateFunctionCode with
+# ci/<sha>.zip), so s3_key/source_code_hash are ignored after creation:
+# otherwise every `terraform apply` would roll the functions back to whatever
+# local ZIP var.lambda_zip_path points at.
 
 resource "aws_lambda_function" "api" {
   function_name = "doclens-api-${var.environment}"
@@ -26,12 +35,18 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      DOCUMENT_BUCKET  = var.document_bucket_id
-      AURORA_CLUSTER   = var.aurora_cluster_arn
-      AURORA_SECRET    = var.aurora_secret_arn
-      COGNITO_ENDPOINT = var.user_pool_endpoint
-      CHAT_MODEL_ID    = var.chat_model_id
+      DOCUMENT_BUCKET        = var.document_bucket_id
+      AURORA_CLUSTER         = var.aurora_cluster_arn
+      AURORA_SECRET          = var.aurora_secret_arn
+      COGNITO_ENDPOINT       = var.user_pool_endpoint
+      CHAT_MODEL_ID          = var.chat_model_id
+      DOCLENS_FUNCTION_ROLE  = "api"
+      DOCLENS_ENABLE_SWAGGER = tostring(var.enable_swagger)
     }
+  }
+
+  lifecycle {
+    ignore_changes = [s3_key, source_code_hash]
   }
 
   depends_on = [aws_iam_role_policy.api]
@@ -66,7 +81,12 @@ resource "aws_lambda_function" "processor" {
       CHAT_MODEL_ID          = var.chat_model_id
       TEXTRACT_SNS_TOPIC_ARN = aws_sns_topic.textract_completion.arn
       TEXTRACT_SNS_ROLE_ARN  = aws_iam_role.textract_sns_publish.arn
+      DOCLENS_FUNCTION_ROLE  = "processor"
     }
+  }
+
+  lifecycle {
+    ignore_changes = [s3_key, source_code_hash]
   }
 
   depends_on = [aws_iam_role_policy.processor]
@@ -76,6 +96,10 @@ resource "aws_lambda_event_source_mapping" "processor_sqs" {
   event_source_arn = aws_sqs_queue.processing.arn
   function_name    = aws_lambda_function.processor.arn
   batch_size       = 1
+
+  # The handler reports per-message failures (SQSBatchResponse) instead of
+  # failing the whole batch.
+  function_response_types = ["ReportBatchItemFailures"]
 }
 
 resource "aws_lambda_function" "ocr_result" {
@@ -101,9 +125,14 @@ resource "aws_lambda_function" "ocr_result" {
 
   environment {
     variables = {
-      AURORA_CLUSTER = var.aurora_cluster_arn
-      AURORA_SECRET  = var.aurora_secret_arn
+      AURORA_CLUSTER        = var.aurora_cluster_arn
+      AURORA_SECRET         = var.aurora_secret_arn
+      DOCLENS_FUNCTION_ROLE = "ocr_result"
     }
+  }
+
+  lifecycle {
+    ignore_changes = [s3_key, source_code_hash]
   }
 
   depends_on = [aws_iam_role_policy.ocr_result]
@@ -113,4 +142,6 @@ resource "aws_lambda_event_source_mapping" "ocr_result_sqs" {
   event_source_arn = aws_sqs_queue.ocr_result.arn
   function_name    = aws_lambda_function.ocr_result.arn
   batch_size       = 1
+
+  function_response_types = ["ReportBatchItemFailures"]
 }

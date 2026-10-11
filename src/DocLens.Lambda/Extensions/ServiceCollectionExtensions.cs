@@ -3,7 +3,9 @@ using Amazon.BedrockRuntime;
 using Amazon.RDSDataService;
 using Amazon.S3;
 using DocLens.Lambda.Context;
+using DocLens.Lambda.Data;
 using DocLens.Lambda.Options;
+using DocLens.Lambda.Services.Access;
 using DocLens.Lambda.Services.Extraction;
 using DocLens.Lambda.Services.Ocr;
 using DocLens.Lambda.Services.Semantic;
@@ -32,6 +34,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<TenantContext>();
         services.AddScoped<ITenantContext>(sp => sp.GetRequiredService<TenantContext>());
 
+        services.AddScoped<IDocumentRepository, AuroraDocumentRepository>();
+        services.AddScoped<IDocumentAccessGuard, DocumentAccessGuard>();
         services.AddScoped<IOcrService, TextractOcrService>();
         services.AddScoped<ISemanticAnalysisService, BedrockSemanticAnalysisService>();
         services.AddScoped<IDocumentExtractionService, DocumentExtractionService>();

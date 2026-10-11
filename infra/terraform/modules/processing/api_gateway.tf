@@ -5,15 +5,23 @@
 # routing happens inside the Lambda. Every endpoint in api-reference.md
 # requires a Bearer token, so a single JWT-authorized default route covers
 # the whole surface — there is no public/anonymous route to carve out.
+# Business routes live under /api/* in the app itself (Program.cs), matching
+# the path CloudFront forwards unchanged (DocLens.Infra modules/edge).
 
 resource "aws_apigatewayv2_api" "main" {
   name          = "doclens-api-${var.environment}"
   protocol_type = "HTTP"
 
-  cors_configuration {
-    allow_origins = ["*"] # tightened to the real frontend origin(s) once modules/edge exists
-    allow_methods = ["GET", "POST", "PATCH", "OPTIONS"]
-    allow_headers = ["Authorization", "Content-Type"]
+  # Browsers normally reach the API through CloudFront's /api/* behavior
+  # (same origin, no CORS needed). CORS is only for callers hitting the
+  # execute-api URL directly; no block at all when the list is empty.
+  dynamic "cors_configuration" {
+    for_each = length(var.cors_allow_origins) > 0 ? [1] : []
+    content {
+      allow_origins = var.cors_allow_origins
+      allow_methods = ["GET", "POST", "PATCH", "OPTIONS"]
+      allow_headers = ["Authorization", "Content-Type"]
+    }
   }
 }
 
@@ -56,6 +64,8 @@ resource "aws_apigatewayv2_route" "swagger" {
 }
 
 resource "aws_apigatewayv2_route" "swagger_root" {
+  count = var.enable_swagger ? 1 : 0
+
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = "GET /swagger"
   authorization_type = "NONE"

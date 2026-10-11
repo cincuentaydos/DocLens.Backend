@@ -7,7 +7,17 @@ cdk.out
 
 # Terraform state files — use remote backend (S3), never commit locally
 *.tfstate
-*.tfstate.backup
+*.tfstate.*
+
+# Terraform plan output — a saved plan embeds a full copy of the state
+# (account ID, ARNs, sometimes secrets), never commit
+tfplan
+tfplan.*
+*.tfplan
+
+# Terraform crash logs
+crash.log
+crash.*.log
 
 # Terraform variable files that may contain secrets
 terraform.tfvars

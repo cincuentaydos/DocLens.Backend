@@ -5,7 +5,7 @@ meta {
 }
 
 post {
-  url: {{baseUrl}}/documents/process
+  url: {{baseUrl}}/api/documents/process
   body: json
   auth: none
 }
@@ -16,18 +16,18 @@ headers {
 
 body:json {
   {
-    "documentId": "smoke-test-doc-1",
-    "s3Key": "test-tenant/documents/smoke-test-doc-1.pdf",
+    "documentId": "00000000-0000-4000-8000-000000000001",
+    "s3Key": "test-tenant/documents/00000000-0000-4000-8000-000000000001/v1.pdf",
     "documentType": 0
   }
 }
 
 tests {
-  // s3Key above isn't a real object yet, so this won't return 200 until
-  // one is uploaded to the document bucket — that's a separate step, not
-  // part of this smoke test. What this DOES prove: the JWT authorizer
-  // accepted the token, TenantMiddleware resolved custom:tenantId, and the
-  // Lambda actually ran the handler — i.e. not an auth/routing failure.
+  // The documentId/s3Key above don't match a prepared version, so the
+  // endpoint answers 404 (or 409 for a version still pending malware scan).
+  // What this DOES prove: the JWT authorizer accepted the token,
+  // TenantMiddleware resolved custom:tenantId, and the Lambda ran the
+  // handler under /api — i.e. not an auth/routing failure.
   test("request is authenticated and reaches the handler", function () {
     expect(res.getStatus()).to.not.equal(401);
     expect(res.getStatus()).to.not.equal(403);

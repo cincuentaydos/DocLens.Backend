@@ -18,8 +18,11 @@ variable "lambda_zip_path" {
   description = <<-EOT
     Path to the Lambda deployment ZIP shared by the API, Processor, and OCR
     result functions (see modules/processing).
-    Build with: dotnet publish ../../src/DocLens.Lambda -c Release -o /tmp/lambda-out
-    then: zip -j /tmp/lambda-out/doclens-lambda.zip /tmp/lambda-out/*
+    Must be a self-contained linux-x64 publish whose entry binary is named
+    `bootstrap` (provided.al2023). Build it with the steps in infra/README.md
+    (dotnet publish ... --self-contained + scripts/package-lambda-zip.py).
+    Only read when the functions are first created: afterwards CI deploys
+    the code and Terraform ignores s3_key/source_code_hash.
   EOT
   type        = string
   default     = "../../src/DocLens.Lambda/bin/Release/net10.0/linux-x64/publish/doclens-lambda.zip"
@@ -35,4 +38,26 @@ variable "chat_model_id" {
   description = "Bedrock Claude model used for semantic extraction, chat and drafting."
   type        = string
   default     = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+}
+
+variable "cors_allow_origins" {
+  description = "Origins allowed by the HTTP API's CORS configuration. Empty (the default) disables CORS. \"*\" is rejected in prod."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = var.environment != "prod" || !contains(var.cors_allow_origins, "*")
+    error_message = "cors_allow_origins must not contain \"*\" in prod."
+  }
+}
+
+variable "enable_swagger" {
+  description = "Expose Swagger UI (unauthenticated GET /swagger). Defaults to false; enabled in envs/sbx.tfvars only."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !(var.environment == "prod" && var.enable_swagger)
+    error_message = "enable_swagger must be false in prod."
+  }
 }
