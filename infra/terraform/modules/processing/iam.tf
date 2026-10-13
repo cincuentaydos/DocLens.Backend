@@ -92,28 +92,6 @@ resource "aws_iam_role_policy" "api" {
         Resource = var.kms_key_arn
       },
       {
-        # /documents/process currently runs OCR synchronously from the API
-        # Lambda (the endpoint calls TextractOcrService directly) rather
-        # than through the async ADR-006/011 pipeline — that's the
-        # scaffold's current shape, not yet the documented target
-        # architecture. Mirrors the processor role's S3Read/Textract
-        # statements below until this endpoint moves to the queue.
-        Sid      = "S3Read"
-        Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:GetObjectVersion"]
-        Resource = "${var.document_bucket_arn}/*"
-      },
-      {
-        Sid    = "Textract"
-        Effect = "Allow"
-        Action = [
-          "textract:DetectDocumentText",
-          "textract:StartDocumentTextDetection",
-          "textract:GetDocumentTextDetection"
-        ]
-        Resource = "*"
-      },
-      {
         Sid    = "BedrockGenerate"
         Effect = "Allow"
         Action = ["bedrock:InvokeModel"]
@@ -129,6 +107,24 @@ resource "aws_iam_role_policy" "api" {
         Resource = "*" # scoped down once the Knowledge Base ARN exists — see modules/knowledge_base
       },
       {
+        # /review resolves the Review state machine's EnterReview wait;
+        # /reprocess re-triggers Extraction via a fresh event, never by
+        # calling Step Functions directly (see EventBridgePutEvents below) —
+        # ADR-011's "no automatic retries" rule for NEEDS_CORRECTION.
+        Sid      = "ResolveReviewWait"
+        Effect   = "Allow"
+        Action   = ["states:SendTaskSuccess", "states:SendTaskFailure"]
+        Resource = aws_sfn_state_machine.document_review.arn
+      },
+      {
+        # /reprocess and /chat's audit trail both go through custom events —
+        # PrepareUpload etc. keep going straight to Aurora as before.
+        Sid      = "EventBridgePutEvents"
+        Effect   = "Allow"
+        Action   = ["events:PutEvents"]
+        Resource = "arn:aws:events:*:*:event-bus/default"
+      },
+      {
         Sid      = "XRay"
         Effect   = "Allow"
         Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
@@ -138,15 +134,15 @@ resource "aws_iam_role_policy" "api" {
   })
 }
 
-# --- Processor Lambda role (SQS consumer, ADR-011) ---
+# --- Extraction worker role (doclens-document-extraction-{env} Step Functions, ADR-011 revision) ---
 
-resource "aws_cloudwatch_log_group" "processor" {
-  name              = "/aws/lambda/doclens-processor-${var.environment}"
+resource "aws_cloudwatch_log_group" "extraction_worker" {
+  name              = "/aws/lambda/doclens-extraction-worker-${var.environment}"
   retention_in_days = 30
 }
 
-resource "aws_iam_role" "processor" {
-  name = "doclens-processor-role-${var.environment}"
+resource "aws_iam_role" "extraction_worker" {
+  name = "doclens-extraction-worker-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -158,9 +154,9 @@ resource "aws_iam_role" "processor" {
   })
 }
 
-resource "aws_iam_role_policy" "processor" {
-  name = "doclens-processor-policy-${var.environment}"
-  role = aws_iam_role.processor.id
+resource "aws_iam_role_policy" "extraction_worker" {
+  name = "doclens-extraction-worker-policy-${var.environment}"
+  role = aws_iam_role.extraction_worker.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -169,32 +165,40 @@ resource "aws_iam_role_policy" "processor" {
         Sid      = "Logs"
         Effect   = "Allow"
         Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-        Resource = "${aws_cloudwatch_log_group.processor.arn}:*"
+        Resource = "${aws_cloudwatch_log_group.extraction_worker.arn}:*"
       },
       {
-        Sid      = "S3Read"
+        # DetectFormat/StartTextractJob read the original from document_bucket.
+        Sid      = "S3ReadOriginal"
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:GetObjectVersion"]
         Resource = "${var.document_bucket_arn}/*"
       },
       {
-        Sid    = "Sqs"
-        Effect = "Allow"
-        Action = [
-          "sqs:ReceiveMessage",
-          "sqs:DeleteMessage",
-          "sqs:GetQueueAttributes"
-        ]
-        Resource = aws_sqs_queue.processing.arn
+        # DetectFormat writes the intermediate raw-extracted text to
+        # kb_source (to stay under the 256KB Step Functions state limit);
+        # ClassifyDocument/SemanticExtraction read that same object back;
+        # DetectAndRedactPII writes the final redacted text there too — so
+        # this role needs both directions on kb_source, not just write.
+        Sid      = "S3ReadWriteKbSource"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject"]
+        Resource = "${var.kb_source_bucket_arn}/*"
       },
       {
-        Sid    = "Textract"
-        Effect = "Allow"
-        Action = [
-          "textract:DetectDocumentText",
-          "textract:StartDocumentTextDetection",
-          "textract:GetDocumentTextDetection"
-        ]
+        # kb_source uses the same CMK as document_bucket — this role only
+        # had kms:Decrypt (from aurora_data_api_statements, for reading the
+        # original) but never kms:GenerateDataKey, needed for its own writes
+        # to kb_source's SSE-KMS default encryption to succeed.
+        Sid      = "KmsWriteRedacted"
+        Effect   = "Allow"
+        Action   = ["kms:GenerateDataKey"]
+        Resource = var.kms_key_arn
+      },
+      {
+        Sid      = "Textract"
+        Effect   = "Allow"
+        Action   = ["textract:StartDocumentTextDetection"]
         Resource = "*"
       },
       {
@@ -204,7 +208,14 @@ resource "aws_iam_role_policy" "processor" {
         Resource = aws_iam_role.textract_sns_publish.arn
       },
       {
-        Sid    = "BedrockExtract"
+        # DetectAndRedactPII (ADR-014) — Comprehend's PII detection.
+        Sid      = "ComprehendPii"
+        Effect   = "Allow"
+        Action   = ["comprehend:DetectPiiEntities"]
+        Resource = "*"
+      },
+      {
+        Sid    = "Bedrock"
         Effect = "Allow"
         Action = ["bedrock:InvokeModel"]
         Resource = [
@@ -222,15 +233,15 @@ resource "aws_iam_role_policy" "processor" {
   })
 }
 
-# --- OCR result Lambda role (Textract async completion, ADR-003) ---
+# --- Textract bridge role (SNS-triggered, resolves StartTextractJob's .waitForTaskToken) ---
 
-resource "aws_cloudwatch_log_group" "ocr_result" {
-  name              = "/aws/lambda/doclens-ocr-result-${var.environment}"
+resource "aws_cloudwatch_log_group" "textract_bridge" {
+  name              = "/aws/lambda/doclens-textract-bridge-${var.environment}"
   retention_in_days = 30
 }
 
-resource "aws_iam_role" "ocr_result" {
-  name = "doclens-ocr-result-role-${var.environment}"
+resource "aws_iam_role" "textract_bridge" {
+  name = "doclens-textract-bridge-role-${var.environment}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -242,9 +253,66 @@ resource "aws_iam_role" "ocr_result" {
   })
 }
 
-resource "aws_iam_role_policy" "ocr_result" {
-  name = "doclens-ocr-result-policy-${var.environment}"
-  role = aws_iam_role.ocr_result.id
+resource "aws_iam_role_policy" "textract_bridge" {
+  name = "doclens-textract-bridge-policy-${var.environment}"
+  role = aws_iam_role.textract_bridge.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "Logs"
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "${aws_cloudwatch_log_group.textract_bridge.arn}:*"
+      },
+      {
+        Sid      = "TextractGetResult"
+        Effect   = "Allow"
+        Action   = ["textract:GetDocumentTextDetection"]
+        Resource = "*"
+      },
+      {
+        # The only thing this Lambda exists to do: resume the paused
+        # StartTextractJob task in the Extraction state machine.
+        Sid      = "ResolveTextractWait"
+        Effect   = "Allow"
+        Action   = ["states:SendTaskSuccess", "states:SendTaskFailure"]
+        Resource = aws_sfn_state_machine.document_extraction.arn
+      },
+      {
+        Sid      = "XRay"
+        Effect   = "Allow"
+        Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# --- Review worker role (doclens-document-review-{env} Step Functions) ---
+
+resource "aws_cloudwatch_log_group" "review_worker" {
+  name              = "/aws/lambda/doclens-review-worker-${var.environment}"
+  retention_in_days = 30
+}
+
+resource "aws_iam_role" "review_worker" {
+  name = "doclens-review-worker-role-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "review_worker" {
+  name = "doclens-review-worker-policy-${var.environment}"
+  role = aws_iam_role.review_worker.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -253,22 +321,68 @@ resource "aws_iam_role_policy" "ocr_result" {
         Sid      = "Logs"
         Effect   = "Allow"
         Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-        Resource = "${aws_cloudwatch_log_group.ocr_result.arn}:*"
+        Resource = "${aws_cloudwatch_log_group.review_worker.arn}:*"
       },
       {
-        Sid    = "Sqs"
-        Effect = "Allow"
-        Action = [
-          "sqs:ReceiveMessage",
-          "sqs:DeleteMessage",
-          "sqs:GetQueueAttributes"
-        ]
-        Resource = aws_sqs_queue.ocr_result.arn
-      },
-      {
-        Sid      = "TextractGetResult"
+        Sid      = "XRay"
         Effect   = "Allow"
-        Action   = ["textract:GetDocumentTextDetection"]
+        Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
+        Resource = "*"
+      }
+    ])
+  })
+}
+
+# --- Sync worker role (doclens-document-kb-sync-{env} Step Functions) ---
+
+resource "aws_cloudwatch_log_group" "sync_worker" {
+  name              = "/aws/lambda/doclens-sync-worker-${var.environment}"
+  retention_in_days = 30
+}
+
+resource "aws_iam_role" "sync_worker" {
+  name = "doclens-sync-worker-role-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "sync_worker" {
+  name = "doclens-sync-worker-policy-${var.environment}"
+  role = aws_iam_role.sync_worker.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat(local.aurora_data_api_statements, [
+      {
+        Sid      = "Logs"
+        Effect   = "Allow"
+        Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "${aws_cloudwatch_log_group.sync_worker.arn}:*"
+      },
+      {
+        # PrepareContent's existence/read check — never on document_bucket.
+        Sid      = "S3ReadRedacted"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:HeadObject"]
+        Resource = "${var.kb_source_bucket_arn}/*"
+      },
+      {
+        Sid      = "BedrockIngestion"
+        Effect   = "Allow"
+        Action   = ["bedrock:StartIngestionJob", "bedrock:GetIngestionJob"]
+        Resource = "arn:aws:bedrock:*:*:knowledge-base/${var.knowledge_base_id}"
+      },
+      {
+        Sid      = "XRay"
+        Effect   = "Allow"
+        Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords"]
         Resource = "*"
       }
     ])

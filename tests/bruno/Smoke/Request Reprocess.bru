@@ -1,0 +1,25 @@
+meta {
+  name: Request Reprocess
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/documents/{{documentId}}/versions/{{versionNumber}}/reprocess
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{idToken}}
+}
+
+tests {
+  // Only meaningful once a version is actually in NEEDS_CORRECTION — not
+  // part of the default smoke run, kept here for when that path needs
+  // exercising manually.
+  test("responds without an auth/routing failure", function () {
+    expect(res.getStatus()).to.not.equal(401);
+    expect(res.getStatus()).to.not.equal(403);
+  });
+}

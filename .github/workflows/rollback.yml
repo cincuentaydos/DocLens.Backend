@@ -1,0 +1,65 @@
+name: Rollback Lambda deploy
+
+# Redeploys a previously built ZIP without rebuilding — cd.yml's "Upload
+# package to S3" step keys every build as ci/doclens-lambda-<sha>.zip and
+# the artifacts bucket has no lifecycle rule, so any past build is still
+# there to redeploy from (see artifacts.tf).
+#
+# Deliberately code-only: it does NOT touch the Aurora schema. Migrations
+# are roll-forward only (see migrations/README.md) — if the commit being
+# restored predates a migration that's already applied, this rollback can
+# leave old code running against newer schema. Check that before using it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Git SHA of the previously deployed commit to restore (must have a matching CD run that built it)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  rollback:
+    name: Redeploy a previous Lambda build
+    runs-on: ubuntu-latest
+    environment:
+      name: sbx
+      url: ${{ vars.SWAGGER_URL }}
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: eu-west-1
+
+      - name: Verify the build exists in S3
+        run: |
+          KEY="ci/doclens-lambda-${{ github.event.inputs.sha }}.zip"
+          aws s3api head-object --bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --key "$KEY"
+          echo "KEY=$KEY" >> "$GITHUB_ENV"
+
+      - name: Redeploy API Lambda
+        run: aws lambda update-function-code --function-name "${{ vars.LAMBDA_API_ARN }}" --s3-bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --s3-key "$KEY"
+
+      - name: Redeploy Extraction Worker Lambda
+        run: aws lambda update-function-code --function-name "${{ vars.LAMBDA_EXTRACTION_WORKER_ARN }}" --s3-bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --s3-key "$KEY"
+
+      - name: Redeploy Textract Bridge Lambda
+        run: aws lambda update-function-code --function-name "${{ vars.LAMBDA_TEXTRACT_BRIDGE_ARN }}" --s3-bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --s3-key "$KEY"
+
+      - name: Redeploy Review Worker Lambda
+        run: aws lambda update-function-code --function-name "${{ vars.LAMBDA_REVIEW_WORKER_ARN }}" --s3-bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --s3-key "$KEY"
+
+      - name: Redeploy Sync Worker Lambda
+        run: aws lambda update-function-code --function-name "${{ vars.LAMBDA_SYNC_WORKER_ARN }}" --s3-bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --s3-key "$KEY"
+
+      - name: Summary
+        run: |
+          echo "### Rolled back to \`${{ github.event.inputs.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Restored package: $KEY" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Database schema was **not** touched (roll-forward only)." >> "$GITHUB_STEP_SUMMARY"

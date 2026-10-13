@@ -1,0 +1,33 @@
+meta {
+  name: Upload File to S3
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{uploadUrl}}
+  body: text
+  auth: none
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+body:text {
+  This is a smoke-test document for DocLens reprocess.
+  
+  It is plain text on purpose — DetectFormat's native-text path (ADR-003)
+  doesn't need PdfPig or Textract, so this exercises the pipeline without
+  depending on either. ClassifyDocument and SemanticExtraction still need
+  a working Bedrock quota to get past DetectFormat, though (see the infra
+  deployment log's 2026-09-28 entry).
+  
+  Contacto de prueba: Juan Perez, juan.perez@example.com, telefono 555-0100.
+}
+
+tests {
+  test("S3 accepted the upload", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

@@ -1,0 +1,31 @@
+meta {
+  name: Ask
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/procesos/smoke-test-proceso/chat
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{idToken}}
+}
+
+body:json {
+  {
+    "pregunta": "Que dice el documento sobre Juan Perez?"
+  }
+}
+
+tests {
+  // Needs Bedrock's quota unblocked AND at least one document already
+  // INDEXED for this tenant — see IChatService's note that proceso-level
+  // isolation isn't enforced yet either (only empresa_id/tenant).
+  test("responds without an auth/routing failure", function () {
+    expect(res.getStatus()).to.not.equal(401);
+    expect(res.getStatus()).to.not.equal(403);
+  });
+}

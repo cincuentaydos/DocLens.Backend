@@ -60,16 +60,20 @@ data "terraform_remote_state" "infra" {
 }
 
 module "processing" {
-  source              = "./modules/processing"
-  environment         = var.environment
-  document_bucket_arn = data.terraform_remote_state.infra.outputs.document_bucket_arn
-  document_bucket_id  = data.terraform_remote_state.infra.outputs.document_bucket_id
-  aurora_cluster_arn  = data.terraform_remote_state.infra.outputs.aurora_cluster_arn
-  aurora_secret_arn   = data.terraform_remote_state.infra.outputs.aurora_secret_arn
-  user_pool_client_id = data.terraform_remote_state.infra.outputs.user_pool_client_id
-  user_pool_endpoint  = data.terraform_remote_state.infra.outputs.user_pool_endpoint
-  kms_key_arn         = data.terraform_remote_state.infra.outputs.kms_key_arn
-  lambda_zip_path     = var.lambda_zip_path
-  embedding_model_id  = var.embedding_model_id
-  chat_model_id       = var.chat_model_id
+  source               = "./modules/processing"
+  environment          = var.environment
+  document_bucket_arn  = data.terraform_remote_state.infra.outputs.document_bucket_arn
+  document_bucket_id   = data.terraform_remote_state.infra.outputs.document_bucket_id
+  kb_source_bucket_arn = data.terraform_remote_state.infra.outputs.kb_source_bucket_arn
+  kb_source_bucket_id  = data.terraform_remote_state.infra.outputs.kb_source_bucket_id
+  knowledge_base_id             = data.terraform_remote_state.infra.outputs.knowledge_base_id
+  knowledge_base_data_source_id = data.terraform_remote_state.infra.outputs.knowledge_base_data_source_id
+  aurora_cluster_arn   = data.terraform_remote_state.infra.outputs.aurora_cluster_arn
+  aurora_secret_arn    = data.terraform_remote_state.infra.outputs.aurora_secret_arn
+  user_pool_client_id  = data.terraform_remote_state.infra.outputs.user_pool_client_id
+  user_pool_endpoint   = data.terraform_remote_state.infra.outputs.user_pool_endpoint
+  kms_key_arn          = data.terraform_remote_state.infra.outputs.kms_key_arn
+  lambda_zip_path      = var.lambda_zip_path
+  embedding_model_id   = var.embedding_model_id
+  chat_model_id        = var.chat_model_id
 }

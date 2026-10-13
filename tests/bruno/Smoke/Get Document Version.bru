@@ -1,0 +1,26 @@
+meta {
+  name: Get Document Version
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/documents/{{documentId}}/versions/{{versionNumber}}
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{idToken}}
+}
+
+tests {
+  // Run this one repeatedly (Bruno has no built-in poll/retry) to watch
+  // `estado` move PENDING → EXTRACTING → PENDING_REVIEW → ... → INDEXED.
+  // With Bedrock's quota still at 0 as of 2026-09-28, expect it to stall
+  // at EXTRACTING — ClassifyDocument can't call bedrock:InvokeModel yet.
+  test("document version exists", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.body.estado).to.be.a("string");
+  });
+}

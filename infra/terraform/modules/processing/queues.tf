@@ -1,68 +1,12 @@
-# Main processing queue — decouples the GuardDuty-clean event from the
-# Processor Lambda (ADR-011). Visibility timeout must exceed the Processor
-# Lambda's timeout (5 min, see lambdas.tf) so a slow OCR job never causes a
-# duplicate delivery.
-
-resource "aws_sqs_queue" "processing_dlq" {
-  name                      = "doclens-processing-dlq-${var.environment}"
-  message_retention_seconds = 1209600 # 14 days
-}
-
-resource "aws_sqs_queue" "processing" {
-  name                       = "doclens-processing-${var.environment}"
-  visibility_timeout_seconds = 360
-
-  redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.processing_dlq.arn
-    maxReceiveCount     = 3
-  })
-}
-
 # --- Textract async OCR completion (ADR-003 / architecture.md) ---
-# For multi-page scanned documents the Processor Lambda calls
-# StartDocumentTextDetection and returns; Textract publishes completion to
-# this SNS topic, which fans out to the SQS queue the OCR result Lambda
-# consumes (see lambdas.tf).
+# extraction_worker calls StartDocumentTextDetection and returns; Textract
+# publishes completion to this SNS topic, which invokes textract_bridge
+# directly (protocol="lambda", see lambdas.tf) — no SQS queue in this path
+# since the old ocr_result Lambda's queue-based consumption was removed in
+# the 2026-09-29 cleanup pass along with that Lambda itself.
 
 resource "aws_sns_topic" "textract_completion" {
   name = "doclens-textract-completion-${var.environment}"
-}
-
-resource "aws_sqs_queue" "ocr_result_dlq" {
-  name                      = "doclens-ocr-result-dlq-${var.environment}"
-  message_retention_seconds = 1209600
-}
-
-resource "aws_sqs_queue" "ocr_result" {
-  name                       = "doclens-ocr-result-${var.environment}"
-  visibility_timeout_seconds = 120
-
-  redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.ocr_result_dlq.arn
-    maxReceiveCount     = 3
-  })
-}
-
-resource "aws_sqs_queue_policy" "ocr_result_allow_sns" {
-  queue_url = aws_sqs_queue.ocr_result.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Sid       = "AllowSNS"
-      Effect    = "Allow"
-      Principal = { Service = "sns.amazonaws.com" }
-      Action    = "sqs:SendMessage"
-      Resource  = aws_sqs_queue.ocr_result.arn
-      Condition = { ArnEquals = { "aws:SourceArn" = aws_sns_topic.textract_completion.arn } }
-    }]
-  })
-}
-
-resource "aws_sns_topic_subscription" "ocr_result" {
-  topic_arn = aws_sns_topic.textract_completion.arn
-  protocol  = "sqs"
-  endpoint  = aws_sqs_queue.ocr_result.arn
 }
 
 # Role Textract assumes to publish the completion notification.

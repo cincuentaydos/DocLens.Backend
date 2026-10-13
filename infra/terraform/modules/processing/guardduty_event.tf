@@ -1,7 +1,7 @@
-# GuardDuty scan-result → EventBridge → SQS (ADR-011). Only a CLEAN result
-# reaches the processing queue; the rule simply never matches/forwards
-# anything else, so a threat or unscannable file never reaches the Processor
-# Lambda's extraction logic.
+# GuardDuty scan-result → EventBridge → Step Functions StartExecution
+# (ADR-011, revised 2026-09-28). Only a CLEAN result starts the Extraction
+# state machine; the rule simply never matches/forwards anything else, so a
+# threat or unscannable file never reaches the extraction worker.
 #
 # NOTE: the exact event pattern below (source/detail-type/detail field names)
 # is a best-effort reconstruction of the GuardDuty Malware Protection for S3
@@ -30,23 +30,26 @@ resource "aws_cloudwatch_event_rule" "guardduty_clean_scan" {
   })
 }
 
-resource "aws_cloudwatch_event_target" "guardduty_clean_to_sqs" {
-  rule = aws_cloudwatch_event_rule.guardduty_clean_scan.name
-  arn  = aws_sqs_queue.processing.arn
-}
 
-resource "aws_sqs_queue_policy" "processing_allow_eventbridge" {
-  queue_url = aws_sqs_queue.processing.id
+# --- ADR-011 revision (2026-09-28): StartExecution replaces the SQS target ---
+# The old "processing" SQS queue this rule used to feed is now dead weight —
+# nothing consumes it once this retarget lands (doclens-processor-{env} is
+# still deployed but simply stops receiving messages; see the step-5
+# cleanup pass in the implementation plan for its removal). The IAM role +
+# retry/DLQ setup here is shared with the reprocess rule in events.tf,
+# since both start the same state machine.
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Sid       = "AllowEventBridge"
-      Effect    = "Allow"
-      Principal = { Service = "events.amazonaws.com" }
-      Action    = "sqs:SendMessage"
-      Resource  = aws_sqs_queue.processing.arn
-      Condition = { ArnEquals = { "aws:SourceArn" = aws_cloudwatch_event_rule.guardduty_clean_scan.arn } }
-    }]
-  })
+resource "aws_cloudwatch_event_target" "guardduty_clean_to_extraction" {
+  rule     = aws_cloudwatch_event_rule.guardduty_clean_scan.name
+  arn      = aws_sfn_state_machine.document_extraction.arn
+  role_arn = aws_iam_role.eventbridge_start_extraction.arn
+
+  retry_policy {
+    maximum_event_age_in_seconds = 3600
+    maximum_retry_attempts       = 3
+  }
+
+  dead_letter_config {
+    arn = aws_sqs_queue.extraction_trigger_dlq.arn
+  }
 }

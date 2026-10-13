@@ -1,0 +1,32 @@
+meta {
+  name: Resolve Review
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/documents/{{documentId}}/versions/{{versionNumber}}/review
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{idToken}}
+}
+
+body:json {
+  {
+    "approved": false,
+    "correctedFields": null,
+    "comentario": "Smoke test approval"
+  }
+}
+
+tests {
+  // Only resolves once the document actually reaches PENDING_REVIEW — see
+  // the note on "Get Document Version" about Bedrock's quota blocking that
+  // as of 2026-09-28. A 404 here most likely means it's not there yet.
+  test("no pending review returns 404, a real one returns 200", function () {
+    expect([200, 404]).to.include(res.getStatus());
+  });
+}

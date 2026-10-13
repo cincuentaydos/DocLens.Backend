@@ -1,0 +1,38 @@
+meta {
+  name: Prepare Upload
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/documents/prepare
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{idToken}}
+}
+
+body:json {
+  {
+    "contentType": "text/plain",
+    "documentId": null
+  }
+}
+
+script:post-response {
+  if (res.body && res.body.documentId) {
+    bru.setEnvVar("documentId", res.body.documentId);
+    bru.setEnvVar("versionNumber", res.body.versionNumber);
+    bru.setEnvVar("uploadUrl", res.body.uploadUrl);
+  }
+}
+
+tests {
+  test("returns a presigned upload URL", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.body.uploadUrl).to.be.a("string");
+    expect(res.body.versionNumber).to.equal(1);
+  });
+}

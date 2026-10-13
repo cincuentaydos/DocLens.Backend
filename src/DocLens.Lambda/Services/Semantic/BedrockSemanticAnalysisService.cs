@@ -93,7 +93,28 @@ public class BedrockSemanticAnalysisService : ISemanticAnalysisService
             .GetProperty("text")
             .GetString() ?? "{}";
 
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(content)
+        return JsonSerializer.Deserialize<Dictionary<string, string>>(StripCodeFence(content))
             ?? new Dictionary<string, string>();
+    }
+
+    // Claude wraps its JSON in a ```json ... ``` fence often enough (despite
+    // the prompt asking it not to) that parsing the raw text directly fails
+    // with "'`' is an invalid start of a value" — strip a leading/trailing
+    // fence if present instead of relying on the model to omit it.
+    private static string StripCodeFence(string text)
+    {
+        var trimmed = text.Trim();
+        if (!trimmed.StartsWith("```"))
+        {
+            return trimmed;
+        }
+
+        var firstNewline = trimmed.IndexOf('\n');
+        var withoutOpeningFence = firstNewline >= 0 ? trimmed[(firstNewline + 1)..] : trimmed;
+
+        var closingFenceIndex = withoutOpeningFence.LastIndexOf("```", StringComparison.Ordinal);
+        return closingFenceIndex >= 0
+            ? withoutOpeningFence[..closingFenceIndex].Trim()
+            : withoutOpeningFence.Trim();
     }
 }

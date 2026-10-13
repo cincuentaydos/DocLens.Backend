@@ -10,6 +10,25 @@ variable "document_bucket_id" {
   type = string
 }
 
+variable "kb_source_bucket_arn" {
+  description = "Redacted-content bucket (ADR-014) — from DocLens.Infra's terraform_remote_state. Never the same as document_bucket_arn."
+  type        = string
+}
+
+variable "kb_source_bucket_id" {
+  type = string
+}
+
+variable "knowledge_base_id" {
+  description = "Bedrock Knowledge Base ID (from DocLens.Infra's terraform_remote_state) — scopes doclens-sync-worker's StartIngestionJob/GetIngestionJob permission to this one KB."
+  type        = string
+}
+
+variable "knowledge_base_data_source_id" {
+  description = "Bedrock Knowledge Base data source ID — StartIngestionJob needs this alongside knowledge_base_id (it's a request parameter, not part of the IAM resource ARN)."
+  type        = string
+}
+
 variable "aurora_cluster_arn" {
   type = string
 }
@@ -49,16 +68,28 @@ variable "api_handler" {
   default     = "DocLens.Lambda::DocLens.Lambda.LambdaEntryPoint::FunctionHandlerAsync"
 }
 
-variable "processor_handler" {
-  description = "Lambda handler string for the Processor Lambda (SQS consumer — OCR + semantic extraction, see ADR-011)."
+variable "extraction_worker_handler" {
+  description = "Lambda handler for doclens-extraction-worker — the doclens-document-extraction-{env} Step Functions' single action-routed Lambda (DetectFormat, ClassifyDocument, SemanticExtraction, DetectAndRedactPII, StartTextractJob — ADR-011)."
   type        = string
-  default     = "DocLens.Lambda::DocLens.Lambda.ProcessorHandler::HandleAsync"
+  default     = "DocLens.Lambda::DocLens.Lambda.Handlers.ExtractionWorkerHandler::HandleAsync"
 }
 
-variable "ocr_result_handler" {
-  description = "Lambda handler string for the OCR async result Lambda (Textract StartDocumentTextDetection completion via SNS/SQS — see ADR-003)."
+variable "textract_bridge_handler" {
+  description = "Lambda handler for doclens-textract-bridge — triggered by the textract_completion SNS topic, resolves the Extraction state machine's StartTextractJob .waitForTaskToken pause via SendTaskSuccess/Failure."
   type        = string
-  default     = "DocLens.Lambda::DocLens.Lambda.OcrResultHandler::HandleAsync"
+  default     = "DocLens.Lambda::DocLens.Lambda.Handlers.TextractBridgeHandler::HandleAsync"
+}
+
+variable "review_worker_handler" {
+  description = "Lambda handler for doclens-review-worker — the doclens-document-review-{env} Step Functions' action-routed Lambda (EnterReview, WriteApproved, WriteNeedsCorrection)."
+  type        = string
+  default     = "DocLens.Lambda::DocLens.Lambda.Handlers.ReviewWorkerHandler::HandleAsync"
+}
+
+variable "sync_worker_handler" {
+  description = "Lambda handler for doclens-sync-worker — the doclens-document-kb-sync-{env} Step Functions' action-routed Lambda (PrepareContent, StartIngestionJob, GetIngestionJob, WriteIndexed, WriteFailed)."
+  type        = string
+  default     = "DocLens.Lambda::DocLens.Lambda.Handlers.SyncWorkerHandler::HandleAsync"
 }
 
 variable "embedding_model_id" {

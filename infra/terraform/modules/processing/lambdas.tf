@@ -26,26 +26,32 @@ resource "aws_lambda_function" "api" {
 
   environment {
     variables = {
-      DOCUMENT_BUCKET  = var.document_bucket_id
-      AURORA_CLUSTER   = var.aurora_cluster_arn
-      AURORA_SECRET    = var.aurora_secret_arn
-      COGNITO_ENDPOINT = var.user_pool_endpoint
-      CHAT_MODEL_ID    = var.chat_model_id
+      DOCUMENT_BUCKET   = var.document_bucket_id
+      AURORA_CLUSTER    = var.aurora_cluster_arn
+      AURORA_SECRET     = var.aurora_secret_arn
+      COGNITO_ENDPOINT  = var.user_pool_endpoint
+      CHAT_MODEL_ID     = var.chat_model_id
+      KNOWLEDGE_BASE_ID = var.knowledge_base_id
     }
   }
 
   depends_on = [aws_iam_role_policy.api]
 }
 
-resource "aws_lambda_function" "processor" {
-  function_name = "doclens-processor-${var.environment}"
-  role          = aws_iam_role.processor.arn
-  handler       = var.processor_handler
+# --- ADR-011 revision (2026-09-28): the 3-Step-Functions pipeline ---
+# The four functions below, action-routed per workflow instead of one Lambda
+# per state, replace the old doclens-processor-{env}/doclens-ocr-result-{env}
+# pair (removed 2026-09-29's cleanup pass — see infra-deployment-log.md).
+
+resource "aws_lambda_function" "extraction_worker" {
+  function_name = "doclens-extraction-worker-${var.environment}"
+  role          = aws_iam_role.extraction_worker.arn
+  handler       = var.extraction_worker_handler
   runtime       = "provided.al2023"
   s3_bucket     = aws_s3_bucket.artifacts.id
   s3_key        = aws_s3_object.lambda_zip.key
   memory_size   = 1024
-  timeout       = 300 # accommodates long Textract jobs — ADR-006/011
+  timeout       = 120 # single action per invocation, not the whole workflow — StartTextractJob returns immediately, it doesn't poll
 
   source_code_hash = filebase64sha256(var.lambda_zip_path)
 
@@ -54,13 +60,14 @@ resource "aws_lambda_function" "processor" {
   }
 
   logging_config {
-    log_group  = aws_cloudwatch_log_group.processor.name
+    log_group  = aws_cloudwatch_log_group.extraction_worker.name
     log_format = "JSON"
   }
 
   environment {
     variables = {
       DOCUMENT_BUCKET        = var.document_bucket_id
+      KB_SOURCE_BUCKET       = var.kb_source_bucket_id
       AURORA_CLUSTER         = var.aurora_cluster_arn
       AURORA_SECRET          = var.aurora_secret_arn
       CHAT_MODEL_ID          = var.chat_model_id
@@ -69,19 +76,13 @@ resource "aws_lambda_function" "processor" {
     }
   }
 
-  depends_on = [aws_iam_role_policy.processor]
+  depends_on = [aws_iam_role_policy.extraction_worker]
 }
 
-resource "aws_lambda_event_source_mapping" "processor_sqs" {
-  event_source_arn = aws_sqs_queue.processing.arn
-  function_name    = aws_lambda_function.processor.arn
-  batch_size       = 1
-}
-
-resource "aws_lambda_function" "ocr_result" {
-  function_name = "doclens-ocr-result-${var.environment}"
-  role          = aws_iam_role.ocr_result.arn
-  handler       = var.ocr_result_handler
+resource "aws_lambda_function" "textract_bridge" {
+  function_name = "doclens-textract-bridge-${var.environment}"
+  role          = aws_iam_role.textract_bridge.arn
+  handler       = var.textract_bridge_handler
   runtime       = "provided.al2023"
   s3_bucket     = aws_s3_bucket.artifacts.id
   s3_key        = aws_s3_object.lambda_zip.key
@@ -95,7 +96,45 @@ resource "aws_lambda_function" "ocr_result" {
   }
 
   logging_config {
-    log_group  = aws_cloudwatch_log_group.ocr_result.name
+    log_group  = aws_cloudwatch_log_group.textract_bridge.name
+    log_format = "JSON"
+  }
+
+  depends_on = [aws_iam_role_policy.textract_bridge]
+}
+
+resource "aws_sns_topic_subscription" "textract_bridge" {
+  topic_arn = aws_sns_topic.textract_completion.arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.textract_bridge.arn
+}
+
+resource "aws_lambda_permission" "textract_bridge_sns" {
+  statement_id  = "AllowSNS"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.textract_bridge.function_name
+  principal     = "sns.amazonaws.com"
+  source_arn    = aws_sns_topic.textract_completion.arn
+}
+
+resource "aws_lambda_function" "review_worker" {
+  function_name = "doclens-review-worker-${var.environment}"
+  role          = aws_iam_role.review_worker.arn
+  handler       = var.review_worker_handler
+  runtime       = "provided.al2023"
+  s3_bucket     = aws_s3_bucket.artifacts.id
+  s3_key        = aws_s3_object.lambda_zip.key
+  memory_size   = 256
+  timeout       = 30
+
+  source_code_hash = filebase64sha256(var.lambda_zip_path)
+
+  tracing_config {
+    mode = "Active"
+  }
+
+  logging_config {
+    log_group  = aws_cloudwatch_log_group.review_worker.name
     log_format = "JSON"
   }
 
@@ -106,11 +145,39 @@ resource "aws_lambda_function" "ocr_result" {
     }
   }
 
-  depends_on = [aws_iam_role_policy.ocr_result]
+  depends_on = [aws_iam_role_policy.review_worker]
 }
 
-resource "aws_lambda_event_source_mapping" "ocr_result_sqs" {
-  event_source_arn = aws_sqs_queue.ocr_result.arn
-  function_name    = aws_lambda_function.ocr_result.arn
-  batch_size       = 1
+resource "aws_lambda_function" "sync_worker" {
+  function_name = "doclens-sync-worker-${var.environment}"
+  role          = aws_iam_role.sync_worker.arn
+  handler       = var.sync_worker_handler
+  runtime       = "provided.al2023"
+  s3_bucket     = aws_s3_bucket.artifacts.id
+  s3_key        = aws_s3_object.lambda_zip.key
+  memory_size   = 256
+  timeout       = 60
+
+  source_code_hash = filebase64sha256(var.lambda_zip_path)
+
+  tracing_config {
+    mode = "Active"
+  }
+
+  logging_config {
+    log_group  = aws_cloudwatch_log_group.sync_worker.name
+    log_format = "JSON"
+  }
+
+  environment {
+    variables = {
+      KB_SOURCE_BUCKET  = var.kb_source_bucket_id
+      KNOWLEDGE_BASE_ID = var.knowledge_base_id
+      DATA_SOURCE_ID    = var.knowledge_base_data_source_id
+      AURORA_CLUSTER    = var.aurora_cluster_arn
+      AURORA_SECRET     = var.aurora_secret_arn
+    }
+  }
+
+  depends_on = [aws_iam_role_policy.sync_worker]
 }

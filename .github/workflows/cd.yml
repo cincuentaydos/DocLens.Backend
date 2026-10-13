@@ -60,7 +60,7 @@ jobs:
         run: dotnet publish src/DocLens.Lambda -c Release -r linux-x64 --self-contained true -o publish
 
       - name: Package zip
-        # This module deploys all three functions from one ZIP — same
+        # This module deploys all five functions from one ZIP — same
         # convention as infra/terraform/modules/processing/variables.tf's
         # lambda_zip_path (each function just points at a different
         # handler inside the same published assembly).
@@ -82,6 +82,15 @@ jobs:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: eu-west-1
 
+      - name: Run database migrations
+        # Runs before the code deploy below so any schema a new release
+        # depends on is already in place by the time it goes live — see
+        # migrations/README.md.
+        run: ./migrations/run-migrations.sh
+        env:
+          AURORA_CLUSTER_ARN: ${{ vars.AURORA_CLUSTER_ARN }}
+          AURORA_SECRET_ARN: ${{ vars.AURORA_SECRET_ARN }}
+
       - name: Upload package to S3
         # A self-contained package is well past the 50MB direct-upload
         # limit for update-function-code's request body — stage it in S3
@@ -96,11 +105,17 @@ jobs:
       - name: Deploy API Lambda
         run: aws lambda update-function-code --function-name "${{ vars.LAMBDA_API_ARN }}" --s3-bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --s3-key "${{ steps.upload.outputs.key }}"
 
-      - name: Deploy Processor Lambda
-        run: aws lambda update-function-code --function-name "${{ vars.LAMBDA_PROCESSOR_ARN }}" --s3-bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --s3-key "${{ steps.upload.outputs.key }}"
+      - name: Deploy Extraction Worker Lambda
+        run: aws lambda update-function-code --function-name "${{ vars.LAMBDA_EXTRACTION_WORKER_ARN }}" --s3-bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --s3-key "${{ steps.upload.outputs.key }}"
 
-      - name: Deploy OCR Result Lambda
-        run: aws lambda update-function-code --function-name "${{ vars.LAMBDA_OCR_RESULT_ARN }}" --s3-bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --s3-key "${{ steps.upload.outputs.key }}"
+      - name: Deploy Textract Bridge Lambda
+        run: aws lambda update-function-code --function-name "${{ vars.LAMBDA_TEXTRACT_BRIDGE_ARN }}" --s3-bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --s3-key "${{ steps.upload.outputs.key }}"
+
+      - name: Deploy Review Worker Lambda
+        run: aws lambda update-function-code --function-name "${{ vars.LAMBDA_REVIEW_WORKER_ARN }}" --s3-bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --s3-key "${{ steps.upload.outputs.key }}"
+
+      - name: Deploy Sync Worker Lambda
+        run: aws lambda update-function-code --function-name "${{ vars.LAMBDA_SYNC_WORKER_ARN }}" --s3-bucket "${{ vars.LAMBDA_ARTIFACTS_BUCKET }}" --s3-key "${{ steps.upload.outputs.key }}"
 
       - name: Print API endpoint
         run: |

@@ -7,22 +7,29 @@ output "api_id" {
   value = module.processing.api_id
 }
 
-output "processing_queue_arn" {
-  description = "Useful for inspecting the DLQ (doclens-processing-dlq-<env>) during troubleshooting."
-  value       = module.processing.processing_queue_arn
-}
-
 output "api_lambda_arn" {
   description = "Consumed by DocLens.Infra/governance's GitHub Actions deploy role (lambda:UpdateFunctionCode) via terraform_remote_state."
   value       = module.processing.api_lambda_arn
 }
 
-output "processor_lambda_arn" {
-  value = module.processing.processor_lambda_arn
+output "extraction_worker_lambda_arn" {
+  description = "Consumed by DocLens.Infra/governance's GitHub Actions deploy role (lambda:UpdateFunctionCode) via terraform_remote_state."
+  value       = module.processing.extraction_worker_lambda_arn
 }
 
-output "ocr_result_lambda_arn" {
-  value = module.processing.ocr_result_lambda_arn
+output "textract_bridge_lambda_arn" {
+  description = "Consumed by DocLens.Infra/governance's GitHub Actions deploy role (lambda:UpdateFunctionCode) via terraform_remote_state."
+  value       = module.processing.textract_bridge_lambda_arn
+}
+
+output "review_worker_lambda_arn" {
+  description = "Consumed by DocLens.Infra/governance's GitHub Actions deploy role (lambda:UpdateFunctionCode) via terraform_remote_state."
+  value       = module.processing.review_worker_lambda_arn
+}
+
+output "sync_worker_lambda_arn" {
+  description = "Consumed by DocLens.Infra/governance's GitHub Actions deploy role (lambda:UpdateFunctionCode) via terraform_remote_state."
+  value       = module.processing.sync_worker_lambda_arn
 }
 
 output "artifacts_bucket_arn" {

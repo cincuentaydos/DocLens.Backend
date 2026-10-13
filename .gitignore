@@ -44,3 +44,10 @@ local.settings.json
 # Lambda publish output
 publish/
 lambda-publish/
+*.zip
+
+# Terraform — downloaded providers/modules and plan output, never commit
+.terraform/
+tfplan
+tfplan.*
+*.tfplan
