@@ -1,0 +1,45 @@
+meta {
+  name: Upload CV
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{uploadUrl}}
+  body: text
+  auth: none
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+body:text {
+  CURRICULUM VITAE
+  
+  Nombre: Pablo Herrera Molina
+  Correo electrónico: pablo.herrera@example.com
+  Teléfono: 622 345 678
+  Dirección: Calle de Velázquez 30, 28001 Madrid
+  
+  Puesto actual: Abogado asociado senior en el área de litigación civil, Bufete Martínez & Asociados (2021 – actualidad).
+  
+  Experiencia
+  - 2016 – 2021: Abogado asociado, Despacho Ruiz & Partners, Barcelona. Litigación civil y mercantil.
+  - 2014 – 2016: Pasante, Gabinete Jurídico López, Madrid.
+  
+  Formación
+  - Máster de Acceso a la Abogacía, Universidad Complutense de Madrid (2014).
+  - Grado en Derecho, Universidad de Salamanca (2013).
+  
+  Habilidades
+  Litigación civil, negociación, derecho contractual, inglés C1, francés B2.
+}
+
+tests {
+  // Run "Smoke / Prepare Upload" right before this — it sets uploadUrl,
+  // valid for 15 minutes. All personal data below is fictitious.
+  test("S3 accepted the upload", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

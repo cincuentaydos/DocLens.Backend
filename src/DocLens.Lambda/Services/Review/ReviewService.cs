@@ -84,7 +84,10 @@ public class ReviewService : IReviewService
             SecretArn = _auroraSecretArn,
             Database = Database,
             Sql = """
-                SELECT r.documento_id::text, r.version_numero, v.estado, v.campos, v.content_type, v.creado_en, r.creado_en
+                SELECT r.documento_id::text, r.version_numero, v.estado, v.campos, v.content_type, v.creado_en, r.creado_en,
+                       v.tipo_documento,
+                       (SELECT json_agg(json_build_object('marcador', p.placeholder, 'tipo', p.tipo_entidad, 'valor', p.valor_real) ORDER BY p.creado_en)
+                 FROM pii_mappings p WHERE p.documento_id = v.documento_id)::text
                 FROM document_reviews r
                 JOIN documento_versiones v ON v.documento_id = r.documento_id AND v.version_numero = r.version_numero
                 JOIN documentos d ON d.id = r.documento_id
@@ -106,7 +109,11 @@ public class ReviewService : IReviewService
                 : JsonDocument.Parse(record[3].StringValue!).RootElement,
             ContentType = record[4].StringValue!,
             SubidoEn = record[5].StringValue!,
-            EnRevisionDesde = record[6].StringValue!
+            EnRevisionDesde = record[6].StringValue!,
+            TipoDocumento = record[7].StringValue,
+            Pii = record[8].StringValue is null
+                ? null
+                : JsonDocument.Parse(record[8].StringValue!).RootElement
         }).ToList();
     }
 

@@ -1,0 +1,40 @@
+meta {
+  name: Upload Contract
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{uploadUrl}}
+  body: text
+  auth: none
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+body:text {
+  CONTRATO DE ARRENDAMIENTO DE VIVIENDA
+  
+  En Madrid, a 15 de septiembre de 2026.
+  
+  REUNIDOS
+  De una parte, D. Carlos Fernández López, con domicilio en Calle Alcalá 200, 28028 Madrid, en calidad de ARRENDADOR.
+  De otra parte, Dña. Marta Sánchez Vidal, con domicilio en Calle Mayor 8, 46001 Valencia, teléfono 611 987 654 y correo marta.sanchez@example.com, en calidad de ARRENDATARIA.
+  
+  CLÁUSULAS
+  Primera. Objeto. El arrendador cede en arrendamiento la vivienda sita en Calle Alcalá 200, 4.º A, Madrid.
+  Segunda. Duración. El contrato entra en vigor el 1 de octubre de 2026 y finaliza el 30 de septiembre de 2031.
+  Tercera. Renta. La renta mensual es de 1.200 EUR, pagadera los cinco primeros días de cada mes en la cuenta ES76 0049 1500 0512 3456 7892.
+  Cuarta. Fianza. La arrendataria entrega una fianza equivalente a dos mensualidades.
+  Quinta. Legislación aplicable. El presente contrato se rige por la Ley 29/1994, de Arrendamientos Urbanos, y los tribunales de Madrid.
+}
+
+tests {
+  // Run "Smoke / Prepare Upload" right before this — it sets uploadUrl,
+  // valid for 15 minutes. All personal data below is fictitious.
+  test("S3 accepted the upload", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

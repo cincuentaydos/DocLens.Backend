@@ -77,7 +77,9 @@ public static class DocumentEndpoints
             SecretArn = configuration["AURORA_SECRET"]!,
             Database = "doclens",
             Sql = """
-                SELECT v.estado, v.campos, v.s3_key, v.content_type, v.creado_en, v.procesado_en
+                SELECT v.estado, v.campos, v.s3_key, v.content_type, v.creado_en, v.procesado_en, v.tipo_documento,
+                       (SELECT json_agg(json_build_object('marcador', p.placeholder, 'tipo', p.tipo_entidad, 'valor', p.valor_real) ORDER BY p.creado_en)
+                 FROM pii_mappings p WHERE p.documento_id = v.documento_id)::text
                 FROM documento_versiones v
                 JOIN documentos d ON d.id = v.documento_id
                 WHERE v.documento_id = :documentId::uuid AND v.version_numero = :versionNumber
@@ -110,7 +112,14 @@ public static class DocumentEndpoints
             s3Key = record[2].StringValue,
             contentType = record[3].StringValue,
             creadoEn = record[4].StringValue,
-            procesadoEn = record[5].StringValue
+            procesadoEn = record[5].StringValue,
+            tipoDocumento = record[6].StringValue,
+            // What DetectAndRedactPII replaced before the text reached the
+            // Knowledge Base — lets the reviewer check the redaction, not
+            // just the extracted campos (which come from the original text).
+            pii = record[7].StringValue is null
+                ? (object?)null
+                : System.Text.Json.JsonDocument.Parse(record[7].StringValue!).RootElement
         });
     }
 

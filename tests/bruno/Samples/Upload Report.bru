@@ -1,0 +1,41 @@
+meta {
+  name: Upload Report
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{uploadUrl}}
+  body: text
+  auth: none
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+body:text {
+  INFORME DE DUE DILIGENCE LEGAL — ADQUISICIÓN DE LOGÍSTICA NORTE S.A.
+  
+  Autora: Elena Ruiz Castillo, socia del área mercantil
+  Fecha: 30 de septiembre de 2026
+  
+  Resumen
+  Se ha revisado la documentación societaria, laboral y contractual de Logística Norte S.A. a solicitud del cliente, D. Javier Ortega Prieto (javier.ortega@example.com).
+  
+  Hallazgos principales
+  1. Existen dos litigios laborales pendientes por despido improcedente, con una contingencia estimada de 85.000 EUR.
+  2. El contrato de arrendamiento de la nave principal vence en marzo de 2027 sin cláusula de prórroga automática.
+  3. No se han detectado cargas registrales sobre los inmuebles de la sociedad.
+  
+  Recomendación
+  Condicionar el cierre de la operación a la renovación del arrendamiento y a una retención del precio que cubra la contingencia laboral.
+}
+
+tests {
+  // Run "Smoke / Prepare Upload" right before this — it sets uploadUrl,
+  // valid for 15 minutes. All personal data below is fictitious.
+  test("S3 accepted the upload", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

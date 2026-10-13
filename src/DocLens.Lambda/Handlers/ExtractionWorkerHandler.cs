@@ -222,7 +222,8 @@ public class ExtractionWorkerHandler
         // until now — persist them as campos so the reviewer can actually
         // see what they're approving (GET .../versions/{n}, GET /documents/reviews/pending).
         var campos = input.GetProperty("semantic").GetProperty("Payload").GetProperty("fields").GetRawText();
-        await WritePendingReviewAsync(documentoId, versionNumero, campos, cancellationToken);
+        var tipoDocumento = input.GetProperty("classify").GetProperty("Payload").GetProperty("documentType").GetString()!;
+        await WritePendingReviewAsync(documentoId, versionNumero, campos, tipoDocumento, cancellationToken);
 
         return new { tenantId, documentoId, versionNumero };
     }
@@ -300,7 +301,8 @@ public class ExtractionWorkerHandler
         return await reader.ReadToEndAsync(cancellationToken);
     }
 
-    private async Task WritePendingReviewAsync(string documentoId, int versionNumero, string camposJson, CancellationToken cancellationToken)
+    private async Task WritePendingReviewAsync(
+        string documentoId, int versionNumero, string camposJson, string tipoDocumento, CancellationToken cancellationToken)
     {
         await _rdsData.ExecuteStatementAsync(new ExecuteStatementRequest
         {
@@ -309,12 +311,13 @@ public class ExtractionWorkerHandler
             Database = "doclens",
             Sql = """
                 UPDATE documento_versiones
-                SET estado = 'PENDING_REVIEW', campos = :campos::jsonb, procesado_en = now()
+                SET estado = 'PENDING_REVIEW', campos = :campos::jsonb, tipo_documento = :tipoDocumento, procesado_en = now()
                 WHERE documento_id = :documentoId::uuid AND version_numero = :versionNumero
                 """,
             Parameters =
             [
                 new SqlParameter { Name = "campos", Value = new Field { StringValue = camposJson } },
+                new SqlParameter { Name = "tipoDocumento", Value = new Field { StringValue = tipoDocumento } },
                 new SqlParameter { Name = "documentoId", Value = new Field { StringValue = documentoId } },
                 new SqlParameter { Name = "versionNumero", Value = new Field { LongValue = versionNumero } }
             ]

@@ -1,0 +1,44 @@
+meta {
+  name: Upload Invoice
+  type: http
+  seq: 1
+}
+
+put {
+  url: {{uploadUrl}}
+  body: text
+  auth: none
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+body:text {
+  FACTURA N.º F-2026-0418
+  
+  Emisor: Bufete Martínez & Asociados S.L., CIF B12345678
+  Calle Serrano 45, 28001 Madrid
+  
+  Cliente: Laura Gómez Ruiz
+  Avenida de la Constitución 12, 3.º B, 41004 Sevilla
+  Correo: laura.gomez@example.com — Teléfono: 600 123 456
+  
+  Fecha de emisión: 2 de octubre de 2026
+  Fecha de vencimiento: 1 de noviembre de 2026
+  
+  Concepto: Honorarios por asesoramiento jurídico en procedimiento de desahucio (expediente 2026/117).
+  Base imponible: 1.800,00 EUR
+  IVA (21 %): 378,00 EUR
+  Total a pagar: 2.178,00 EUR
+  
+  Forma de pago: transferencia bancaria a la cuenta ES91 2100 0418 4502 0005 1332.
+}
+
+tests {
+  // Run "Smoke / Prepare Upload" right before this — it sets uploadUrl,
+  // valid for 15 minutes. All personal data below is fictitious.
+  test("S3 accepted the upload", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}
