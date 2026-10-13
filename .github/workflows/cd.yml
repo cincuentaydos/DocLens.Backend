@@ -85,8 +85,9 @@ jobs:
       - name: Run database migrations
         # Runs before the code deploy below so any schema a new release
         # depends on is already in place by the time it goes live — see
-        # migrations/README.md.
-        run: ./migrations/run-migrations.sh
+        # migrations/README.md. Invoked via bash, not ./ — commits from
+        # Windows (core.filemode=false) don't carry the executable bit.
+        run: bash ./migrations/run-migrations.sh
         env:
           AURORA_CLUSTER_ARN: ${{ vars.AURORA_CLUSTER_ARN }}
           AURORA_SECRET_ARN: ${{ vars.AURORA_SECRET_ARN }}
