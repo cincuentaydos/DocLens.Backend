@@ -1,0 +1,31 @@
+meta {
+  name: List Pending Reviews
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/documents/reviews/pending
+  body: none
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{idToken}}
+}
+
+script:post-response {
+  // Points documentId/versionNumber at the oldest pending review, so
+  // "Resolve Review" right after acts on something that's actually waiting.
+  if (Array.isArray(res.body) && res.body.length > 0) {
+    bru.setEnvVar("documentId", res.body[0].documentId);
+    bru.setEnvVar("versionNumber", res.body[0].versionNumber);
+  }
+}
+
+tests {
+  test("returns the tenant's pending reviews", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.body).to.be.an("array");
+  });
+}

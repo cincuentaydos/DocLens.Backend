@@ -218,7 +218,11 @@ public class ExtractionWorkerHandler
             ContentType = "application/json"
         }, cancellationToken);
 
-        await SetEstadoAsync(documentoId, versionNumero, "PENDING_REVIEW", cancellationToken);
+        // SemanticExtraction's fields only lived in this execution's state
+        // until now — persist them as campos so the reviewer can actually
+        // see what they're approving (GET .../versions/{n}, GET /documents/reviews/pending).
+        var campos = input.GetProperty("semantic").GetProperty("Payload").GetProperty("fields").GetRawText();
+        await WritePendingReviewAsync(documentoId, versionNumero, campos, cancellationToken);
 
         return new { tenantId, documentoId, versionNumero };
     }
@@ -294,6 +298,27 @@ public class ExtractionWorkerHandler
         var obj = await _s3.GetObjectAsync(_kbSourceBucket, key, cancellationToken);
         using var reader = new StreamReader(obj.ResponseStream, Encoding.UTF8);
         return await reader.ReadToEndAsync(cancellationToken);
+    }
+
+    private async Task WritePendingReviewAsync(string documentoId, int versionNumero, string camposJson, CancellationToken cancellationToken)
+    {
+        await _rdsData.ExecuteStatementAsync(new ExecuteStatementRequest
+        {
+            ResourceArn = _auroraClusterArn,
+            SecretArn = _auroraSecretArn,
+            Database = "doclens",
+            Sql = """
+                UPDATE documento_versiones
+                SET estado = 'PENDING_REVIEW', campos = :campos::jsonb, procesado_en = now()
+                WHERE documento_id = :documentoId::uuid AND version_numero = :versionNumero
+                """,
+            Parameters =
+            [
+                new SqlParameter { Name = "campos", Value = new Field { StringValue = camposJson } },
+                new SqlParameter { Name = "documentoId", Value = new Field { StringValue = documentoId } },
+                new SqlParameter { Name = "versionNumero", Value = new Field { LongValue = versionNumero } }
+            ]
+        }, cancellationToken);
     }
 
     private async Task SetEstadoAsync(string documentoId, int versionNumero, string estado, CancellationToken cancellationToken)

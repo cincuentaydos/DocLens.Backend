@@ -27,20 +27,21 @@ variables the previous one sets (`idToken`, `documentId`, `versionNumber`,
 5. **Smoke / Get Document Version** — `GET .../versions/{n}`. Bruno has no
    built-in poll/retry, so re-run this one by hand to watch `estado` move
    `PENDING` → `EXTRACTING` → `PENDING_REVIEW` → `APPROVED` → `INDEXED`.
-
-   **As of 2026-09-28, expect it to stall at `EXTRACTING`** — the account's
-   Bedrock Haiku 4.5 quota is still 0 (a pre-existing new-account
-   restriction, see `docs/infra-deployment-log.md`), and `ClassifyDocument`
-   can't call `bedrock:InvokeModel` until that's resolved. Everything up to
-   there (S3, GuardDuty, EventBridge, the state machine itself, native-text
-   extraction) is real signal even while this is stuck.
-6. **Smoke / Resolve Review** — `POST .../review`. Only resolves (200) once
-   the document actually reaches `PENDING_REVIEW`; a 404 just means it's
-   not there yet (expected while Bedrock is blocked).
-7. **Smoke / Request Reprocess** — `POST .../reprocess`. Only meaningful for
+   From `PENDING_REVIEW` on, `campos` holds what SemanticExtraction pulled
+   out — the fields the reviewer is approving.
+6. **Smoke / List Pending Reviews** — `GET /documents/reviews/pending`.
+   Every version of the test tenant currently parked on the human-review
+   gate, with its `campos`. Points `documentId`/`versionNumber` at the
+   oldest one, so the next request resolves something actually waiting.
+7. **Smoke / Resolve Review** — `POST .../review`. Only resolves (200) once
+   the document actually reaches the review gate; a 404 means there's no
+   open review for it (not there yet, already resolved, or another
+   tenant's document). Set `approved` in the body: `true` continues to KB
+   Sync, `false` leaves the version in `NEEDS_CORRECTION`.
+8. **Smoke / Request Reprocess** — `POST .../reprocess`. Only meaningful for
    a version in `NEEDS_CORRECTION` — not part of the default run.
-8. **Chat / Ask** — `POST /procesos/{procesoId}/chat`. Needs Bedrock
-   unblocked *and* at least one document already `INDEXED` for the test
+9. **Chat / Ask** — `POST /procesos/{procesoId}/chat`. Needs at least
+   one document already `INDEXED` for the test
    tenant. Also a reminder: `IChatService` only isolates by tenant today,
    not by `proceso_id` (ADR-001's full isolation needs the `procesos`/
    `permisos` tables, which don't exist yet) — don't read a 200 here as

@@ -15,15 +15,12 @@ headers {
 }
 
 body:text {
-  This is a smoke-test document for DocLens reprocess.
+  Este es un documento demo de DocLens.
   
-  It is plain text on purpose — DetectFormat's native-text path (ADR-003)
-  doesn't need PdfPig or Textract, so this exercises the pipeline without
-  depending on either. ClassifyDocument and SemanticExtraction still need
-  a working Bedrock quota to get past DetectFormat, though (see the infra
-  deployment log's 2026-09-28 entry).
+  Doclens es el sistema de inteligencia para abogados integrados con IA y RAG.
+  Doclens hace la extracción de las informaciones de documentos de forma segura y cumpliendo con las normativs RGPD en Europa.
   
-  Contacto de prueba: Juan Perez, juan.perez@example.com, telefono 555-0100.
+  Doclens funciona como un middleware de seguridad entre los documentos originales y los documentos que se envian a los modelos LLMs para generación de chunks y embeddings, garantizando la limpieza de los datos personales.
 }
 
 tests {

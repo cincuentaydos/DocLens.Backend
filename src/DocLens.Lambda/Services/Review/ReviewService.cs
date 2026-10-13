@@ -3,6 +3,7 @@ using Amazon.RDSDataService;
 using Amazon.RDSDataService.Model;
 using Amazon.StepFunctions;
 using Amazon.StepFunctions.Model;
+using DocLens.Lambda.Models.Responses;
 
 namespace DocLens.Lambda.Services.Review;
 
@@ -74,7 +75,43 @@ public class ReviewService : IReviewService
             cancellationToken);
     }
 
+    public async Task<IReadOnlyList<PendingReviewItem>> ListPendingAsync(
+        string tenantId, CancellationToken cancellationToken = default)
+    {
+        var response = await _rdsData.ExecuteStatementAsync(new ExecuteStatementRequest
+        {
+            ResourceArn = _auroraClusterArn,
+            SecretArn = _auroraSecretArn,
+            Database = Database,
+            Sql = """
+                SELECT r.documento_id::text, r.version_numero, v.estado, v.campos, v.content_type, v.creado_en, r.creado_en
+                FROM document_reviews r
+                JOIN documento_versiones v ON v.documento_id = r.documento_id AND v.version_numero = r.version_numero
+                JOIN documentos d ON d.id = r.documento_id
+                WHERE r.resuelto_en IS NULL AND d.empresa_id = :empresaId
+                ORDER BY r.creado_en
+                """,
+            Parameters = [Param("empresaId", tenantId)]
+        }, cancellationToken);
+
+        return response.Records.Select(record => new PendingReviewItem
+        {
+            DocumentId = record[0].StringValue!,
+            VersionNumber = (int)record[1].LongValue!.Value,
+            Estado = record[2].StringValue!,
+            // Data API omits isNull on a non-null value, so test the value
+            // itself — `IsNull ?? true` would read every row as null.
+            Campos = record[3].StringValue is null
+                ? null
+                : JsonDocument.Parse(record[3].StringValue!).RootElement,
+            ContentType = record[4].StringValue!,
+            SubidoEn = record[5].StringValue!,
+            EnRevisionDesde = record[6].StringValue!
+        }).ToList();
+    }
+
     public async Task<bool> ResolveAsync(
+        string tenantId,
         string documentoId,
         int versionNumero,
         bool approved,
@@ -83,11 +120,12 @@ public class ReviewService : IReviewService
         string? revisorId,
         CancellationToken cancellationToken = default)
     {
-        var taskToken = await FindPendingTaskTokenAsync(documentoId, versionNumero, cancellationToken);
+        var taskToken = await FindPendingTaskTokenAsync(tenantId, documentoId, versionNumero, cancellationToken);
         if (taskToken is null)
         {
             _logger.LogWarning(
-                "No pending review found for documento {DocumentoId} v{VersionNumero}", documentoId, versionNumero);
+                "No pending review found for documento {DocumentoId} v{VersionNumero}, tenant {TenantId}",
+                documentoId, versionNumero, tenantId);
             return false;
         }
 
@@ -126,8 +164,10 @@ public class ReviewService : IReviewService
         return true;
     }
 
+    // Joins documentos so a caller can only resolve their own tenant's
+    // reviews — the documentoId alone comes straight off the URL.
     private async Task<string?> FindPendingTaskTokenAsync(
-        string documentoId, int versionNumero, CancellationToken cancellationToken)
+        string tenantId, string documentoId, int versionNumero, CancellationToken cancellationToken)
     {
         var response = await _rdsData.ExecuteStatementAsync(new ExecuteStatementRequest
         {
@@ -135,10 +175,17 @@ public class ReviewService : IReviewService
             SecretArn = _auroraSecretArn,
             Database = Database,
             Sql = """
-                SELECT task_token FROM document_reviews
-                WHERE documento_id = :documentoId::uuid AND version_numero = :versionNumero AND resuelto_en IS NULL
+                SELECT r.task_token FROM document_reviews r
+                JOIN documentos d ON d.id = r.documento_id
+                WHERE r.documento_id = :documentoId::uuid AND r.version_numero = :versionNumero
+                  AND r.resuelto_en IS NULL AND d.empresa_id = :empresaId
                 """,
-            Parameters = [Param("documentoId", documentoId), ParamLong("versionNumero", versionNumero)]
+            Parameters =
+            [
+                Param("documentoId", documentoId),
+                ParamLong("versionNumero", versionNumero),
+                Param("empresaId", tenantId)
+            ]
         }, cancellationToken);
 
         return response.Records.Count == 0 ? null : response.Records[0][0].StringValue;

@@ -28,6 +28,10 @@ public static class DocumentEndpoints
         // client-called processing endpoint in favor of the GuardDuty →
         // EventBridge → Step Functions pipeline (infra/terraform/modules/processing).
 
+        group.MapGet("/reviews/pending", ListPendingReviews)
+            .WithName("ListPendingDocumentReviews")
+            .WithSummary("Lists the caller tenant's document versions waiting on the human-review gate, with their extracted fields (ADR-011).");
+
         group.MapPost("/{documentId}/versions/{versionNumber:int}/review", ResolveReview)
             .WithName("ResolveDocumentReview")
             .WithSummary("Resolves the blocking human-review gate — approves (optionally with corrected fields) or rejects extracted data (ADR-011).");
@@ -62,6 +66,7 @@ public static class DocumentEndpoints
     private static async Task<IResult> GetVersion(
         string documentId,
         int versionNumber,
+        ITenantContext tenantContext,
         IAmazonRDSDataService rdsData,
         IConfiguration configuration,
         CancellationToken cancellationToken)
@@ -72,14 +77,17 @@ public static class DocumentEndpoints
             SecretArn = configuration["AURORA_SECRET"]!,
             Database = "doclens",
             Sql = """
-                SELECT estado, campos, s3_key, content_type, creado_en, procesado_en
-                FROM documento_versiones
-                WHERE documento_id = :documentId::uuid AND version_numero = :versionNumber
+                SELECT v.estado, v.campos, v.s3_key, v.content_type, v.creado_en, v.procesado_en
+                FROM documento_versiones v
+                JOIN documentos d ON d.id = v.documento_id
+                WHERE v.documento_id = :documentId::uuid AND v.version_numero = :versionNumber
+                  AND d.empresa_id = :empresaId
                 """,
             Parameters =
             [
                 new SqlParameter { Name = "documentId", Value = new Field { StringValue = documentId } },
-                new SqlParameter { Name = "versionNumber", Value = new Field { LongValue = versionNumber } }
+                new SqlParameter { Name = "versionNumber", Value = new Field { LongValue = versionNumber } },
+                new SqlParameter { Name = "empresaId", Value = new Field { StringValue = tenantContext.TenantId } }
             ]
         }, cancellationToken);
 
@@ -94,7 +102,9 @@ public static class DocumentEndpoints
             documentId,
             versionNumber,
             estado = record[0].StringValue,
-            campos = record[1].IsNull ?? true
+            // Data API omits isNull on a non-null value, so test the value
+            // itself — `IsNull ?? true` read every campos as null.
+            campos = record[1].StringValue is null
                 ? (object?)null
                 : System.Text.Json.JsonDocument.Parse(record[1].StringValue!).RootElement,
             s3Key = record[2].StringValue,
@@ -104,10 +114,20 @@ public static class DocumentEndpoints
         });
     }
 
+    private static async Task<IResult> ListPendingReviews(
+        ITenantContext tenantContext,
+        IReviewService reviewService,
+        CancellationToken cancellationToken)
+    {
+        var pending = await reviewService.ListPendingAsync(tenantContext.TenantId, cancellationToken);
+        return Results.Ok(pending);
+    }
+
     private static async Task<IResult> ResolveReview(
         string documentId,
         int versionNumber,
         ReviewDecisionRequest request,
+        ITenantContext tenantContext,
         IReviewService reviewService,
         HttpContext httpContext,
         CancellationToken cancellationToken)
@@ -118,7 +138,7 @@ public static class DocumentEndpoints
         var revisorId = httpContext.User.FindFirst("sub")?.Value;
 
         var resolved = await reviewService.ResolveAsync(
-            documentId, versionNumber, request.Approved, request.CorrectedFields, request.Comentario, revisorId, cancellationToken);
+            tenantContext.TenantId, documentId, versionNumber, request.Approved, request.CorrectedFields, request.Comentario, revisorId, cancellationToken);
 
         return resolved
             ? Results.Ok(new { resolved = true })
@@ -143,11 +163,18 @@ public static class DocumentEndpoints
             ResourceArn = auroraClusterArn,
             SecretArn = auroraSecretArn,
             Database = "doclens",
-            Sql = "SELECT s3_key, estado FROM documento_versiones WHERE documento_id = :documentId::uuid AND version_numero = :versionNumber",
+            Sql = """
+                SELECT v.s3_key, v.estado
+                FROM documento_versiones v
+                JOIN documentos d ON d.id = v.documento_id
+                WHERE v.documento_id = :documentId::uuid AND v.version_numero = :versionNumber
+                  AND d.empresa_id = :empresaId
+                """,
             Parameters =
             [
                 new SqlParameter { Name = "documentId", Value = new Field { StringValue = documentId } },
-                new SqlParameter { Name = "versionNumber", Value = new Field { LongValue = versionNumber } }
+                new SqlParameter { Name = "versionNumber", Value = new Field { LongValue = versionNumber } },
+                new SqlParameter { Name = "empresaId", Value = new Field { StringValue = tenantContext.TenantId } }
             ]
         }, cancellationToken);
 

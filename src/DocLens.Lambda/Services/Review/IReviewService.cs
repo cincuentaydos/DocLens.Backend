@@ -1,3 +1,5 @@
+using DocLens.Lambda.Models.Responses;
+
 namespace DocLens.Lambda.Services.Review;
 
 public interface IReviewService
@@ -17,12 +19,21 @@ public interface IReviewService
     Task WriteNeedsCorrectionAsync(
         string documentoId, int versionNumero, CancellationToken cancellationToken = default);
 
+    // Called from GET /documents/reviews/pending (doclens-api) — every open
+    // document_reviews row for the caller's tenant, oldest first. Lists
+    // what ResolveAsync can actually resolve: a version can already be
+    // PENDING_REVIEW before EnterReview has persisted its token.
+    Task<IReadOnlyList<PendingReviewItem>> ListPendingAsync(
+        string tenantId, CancellationToken cancellationToken = default);
+
     // Called from POST /documents/{id}/versions/{n}/review (doclens-api) —
     // looks up the pending document_reviews row, records who decided what,
     // and resolves the EnterReview .waitForTaskToken pause via
     // SendTaskSuccess/Failure. Returns false if there's no pending review
-    // for this document version (already resolved, or never entered).
+    // for this document version in the caller's tenant (already resolved,
+    // never entered, or another tenant's document).
     Task<bool> ResolveAsync(
+        string tenantId,
         string documentoId,
         int versionNumero,
         bool approved,
