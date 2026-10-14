@@ -2,6 +2,7 @@ using Amazon.Lambda.AspNetCoreServer.Hosting;
 using Amazon.Lambda.Core;
 using Amazon.Lambda.RuntimeSupport;
 using Amazon.Lambda.Serialization.SystemTextJson;
+using AWS.Lambda.Powertools.Tracing;
 using DocLens.Lambda.Context;
 using DocLens.Lambda.Endpoints;
 using DocLens.Lambda.Extensions;
@@ -19,6 +20,13 @@ using DocLens.Lambda.Handlers;
 // today (doclens-processor-{env}/doclens-ocr-result-{env}'s handler
 // strings pointed at classes that were never dispatched to).
 var handler = Environment.GetEnvironmentVariable("_HANDLER") ?? "";
+
+// Before any AWS client is created: wraps every SDK call (Aurora Data API,
+// S3, Bedrock, Comprehend, Step Functions...) in an X-Ray subsegment, so a
+// trace shows where an invocation's time went, not just its total. The
+// Lambdas' tracing_config (Active) and the state machines'
+// tracing_configuration provide the parent segments.
+Tracing.RegisterForAllServices();
 
 if (IsWorkerHandler(handler, out var workerType))
 {

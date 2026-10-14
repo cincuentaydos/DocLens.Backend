@@ -10,6 +10,7 @@ using DocLens.Lambda.Services.Ocr;
 using DocLens.Lambda.Services.Pii;
 using DocLens.Lambda.Services.Semantic;
 using UglyToad.PdfPig;
+using AWS.Lambda.Powertools.Tracing;
 
 namespace DocLens.Lambda.Handlers;
 
@@ -63,6 +64,7 @@ public class ExtractionWorkerHandler
             ?? throw new InvalidOperationException("AURORA_SECRET is not set.");
     }
 
+    [Tracing(CaptureMode = TracingCaptureMode.Error)]
     public async Task<object> HandleAsync(JsonElement evt, CancellationToken cancellationToken = default)
     {
         var action = evt.GetProperty("action").GetString();

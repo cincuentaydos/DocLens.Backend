@@ -46,8 +46,10 @@ resource "aws_cloudwatch_dashboard" "main" {
         y      = 0
         width  = 24
         height = 1
+        # Header text and transparent background as edited in the console.
         properties = {
-          markdown = "## DocLens ${var.environment} — API, Lambdas, pipeline ADR-011 (Extraction → Review → KB Sync) and DLQs"
+          markdown   = "## DocLens ${var.environment} — API, Lambdas (Extraction → Review → KB Sync) and DLQs"
+          background = "transparent"
         }
       },
 

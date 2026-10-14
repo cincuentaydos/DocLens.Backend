@@ -4,6 +4,7 @@ using Amazon.RDSDataService.Model;
 using Amazon.StepFunctions;
 using Amazon.StepFunctions.Model;
 using DocLens.Lambda.Models.Responses;
+using AWS.Lambda.Powertools.Tracing;
 
 namespace DocLens.Lambda.Services.Review;
 
@@ -75,6 +76,7 @@ public class ReviewService : IReviewService
             cancellationToken);
     }
 
+    [Tracing(CaptureMode = TracingCaptureMode.Error)]
     public async Task<IReadOnlyList<PendingReviewItem>> ListPendingAsync(
         string tenantId, CancellationToken cancellationToken = default)
     {
@@ -117,6 +119,7 @@ public class ReviewService : IReviewService
         }).ToList();
     }
 
+    [Tracing(CaptureMode = TracingCaptureMode.Error)]
     public async Task<bool> ResolveAsync(
         string tenantId,
         string documentoId,

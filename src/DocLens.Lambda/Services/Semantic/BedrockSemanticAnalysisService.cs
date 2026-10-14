@@ -5,6 +5,7 @@ using Amazon.BedrockRuntime.Model;
 using DocLens.Lambda.Models;
 using DocLens.Lambda.Options;
 using Microsoft.Extensions.Options;
+using AWS.Lambda.Powertools.Tracing;
 
 namespace DocLens.Lambda.Services.Semantic;
 
@@ -32,6 +33,7 @@ public class BedrockSemanticAnalysisService : ISemanticAnalysisService
         _logger = logger;
     }
 
+    [Tracing(CaptureMode = TracingCaptureMode.Error)]
     public async Task<Dictionary<string, string>> AnalyzeAsync(
         string rawText,
         DocumentType documentType,

@@ -9,6 +9,7 @@ using Amazon.RDSDataService;
 using Amazon.RDSDataService.Model;
 using DocLens.Lambda.Context;
 using DocLens.Lambda.Models.Responses;
+using AWS.Lambda.Powertools.Tracing;
 
 namespace DocLens.Lambda.Services.Chat;
 
@@ -57,6 +58,9 @@ public class ChatService : IChatService
             ?? throw new InvalidOperationException("AURORA_SECRET is not set.");
     }
 
+    // Error only: responses can carry document text, campos or un-redacted
+    // PII, none of which belongs in X-Ray metadata.
+    [Tracing(CaptureMode = TracingCaptureMode.Error)]
     public async Task<ChatResponse> AskAsync(string pregunta, CancellationToken cancellationToken = default)
     {
         var tenantId = _tenantContext.TenantId;

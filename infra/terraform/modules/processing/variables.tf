@@ -110,7 +110,7 @@ variable "chat_model_id" {
 # them. Claude's are the "Regional" rates, which apply to the eu. (geo)
 # cross-region inference profile; a global. profile is ~10% cheaper.
 variable "bedrock_price_usd_per_mtok" {
-  description = "USD per million tokens for the AI dashboard's cost estimate, keyed by model/direction."
+  description = "USD per million tokens (Claude input/output, embedding input) for the AI dashboard's cost estimate."
   type = object({
     claude_input    = number
     claude_output   = number

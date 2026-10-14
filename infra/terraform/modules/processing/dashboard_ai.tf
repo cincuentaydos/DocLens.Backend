@@ -62,11 +62,47 @@ resource "aws_cloudwatch_dashboard" "ai" {
         }
       },
 
+      # --- Cost estimate ---
+      {
+        # One total (Claude + embeddings). The embedding share isn't shown on
+        # its own: it's a fraction of a cent at these volumes, and singleValue
+        # renders that in scientific notation (7.56E-5).
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 24
+        height = 4
+        properties = {
+          title                = "Estimated Bedrock cost (USD) for the selected time range — Claude + embeddings"
+          region               = local.dashboard_region
+          view                 = "singleValue"
+          stat                 = "Sum"
+          period               = 86400
+          setPeriodToTimeRange = true
+          metrics = [
+            ["AWS/Bedrock", "InputTokenCount", "ModelId", local.ai_chat_model, { id = "ci", visible = false }],
+            ["AWS/Bedrock", "OutputTokenCount", "ModelId", local.ai_chat_model, { id = "co", visible = false }],
+            ["AWS/Bedrock", "InputTokenCount", "ModelId", local.ai_embedding_model, { id = "ei", visible = false }],
+            [{ id = "total", expression = "(FILL(ci, 0) * ${var.bedrock_price_usd_per_mtok.claude_input} + FILL(co, 0) * ${var.bedrock_price_usd_per_mtok.claude_output} + FILL(ei, 0) * ${var.bedrock_price_usd_per_mtok.embedding_input}) / 1000000", label = "Claude + embeddings (estimate)" }],
+          ]
+        }
+      },
+      {
+        type   = "text"
+        x      = 0
+        y      = 10
+        width  = 24
+        height = 1
+        properties = {
+          markdown = "Prices from the AWS Price List API, eu-west-1, 2026-10-14 — USD per 1M tokens — Claude Haiku 4.5: ${var.bedrock_price_usd_per_mtok.claude_input} input / ${var.bedrock_price_usd_per_mtok.claude_output} output · Titan Embeddings v2: ${var.bedrock_price_usd_per_mtok.embedding_input}. Current prices: [aws.amazon.com/bedrock/pricing](https://aws.amazon.com/bedrock/pricing/)"
+        }
+      },
+
       # --- Calls and tokens over time ---
       {
         type   = "metric"
         x      = 0
-        y      = 6
+        y      = 11
         width  = 8
         height = 6
         properties = {
@@ -84,7 +120,7 @@ resource "aws_cloudwatch_dashboard" "ai" {
       {
         type   = "metric"
         x      = 8
-        y      = 6
+        y      = 11
         width  = 8
         height = 6
         properties = {
@@ -103,7 +139,7 @@ resource "aws_cloudwatch_dashboard" "ai" {
       {
         type   = "metric"
         x      = 16
-        y      = 6
+        y      = 11
         width  = 8
         height = 6
         properties = {
@@ -122,7 +158,7 @@ resource "aws_cloudwatch_dashboard" "ai" {
       {
         type   = "metric"
         x      = 0
-        y      = 12
+        y      = 17
         width  = 8
         height = 6
         properties = {
@@ -141,7 +177,7 @@ resource "aws_cloudwatch_dashboard" "ai" {
         # here means no errors, not a broken widget.
         type   = "metric"
         x      = 8
-        y      = 12
+        y      = 17
         width  = 8
         height = 6
         properties = {
@@ -162,7 +198,7 @@ resource "aws_cloudwatch_dashboard" "ai" {
       {
         type   = "metric"
         x      = 16
-        y      = 12
+        y      = 17
         width  = 8
         height = 6
         properties = {
@@ -178,52 +214,6 @@ resource "aws_cloudwatch_dashboard" "ai" {
         }
       },
 
-      # --- Cost estimate ---
-      {
-        type   = "text"
-        x      = 0
-        y      = 18
-        width  = 8
-        height = 6
-        properties = {
-          markdown = <<-EOT
-            ### Estimated cost — an idea, not a bill
-            Tokens × on-demand price, Bedrock model usage only (no Knowledge Base, Aurora, S3 or Lambda).
-
-            | Model | USD / 1M tokens |
-            |---|---|
-            | Claude input | ${var.bedrock_price_usd_per_mtok.claude_input} |
-            | Claude output | ${var.bedrock_price_usd_per_mtok.claude_output} |
-            | Embeddings input | ${var.bedrock_price_usd_per_mtok.embedding_input} |
-
-            Prices from the AWS Price List API, eu-west-1, 2026-10-14 (Claude: "Regional" rate for the eu. profile). Current prices: [aws.amazon.com/bedrock/pricing](https://aws.amazon.com/bedrock/pricing/)
-          EOT
-        }
-      },
-      {
-        type   = "metric"
-        x      = 8
-        y      = 18
-        width  = 16
-        height = 6
-        properties = {
-          title                = "Estimated Bedrock cost (USD) for the selected time range"
-          region               = local.dashboard_region
-          view                 = "singleValue"
-          stat                 = "Sum"
-          period               = 86400
-          setPeriodToTimeRange = true
-          metrics = [
-            ["AWS/Bedrock", "InputTokenCount", "ModelId", local.ai_chat_model, { id = "ci", visible = false }],
-            ["AWS/Bedrock", "OutputTokenCount", "ModelId", local.ai_chat_model, { id = "co", visible = false }],
-            ["AWS/Bedrock", "InputTokenCount", "ModelId", local.ai_embedding_model, { id = "ei", visible = false }],
-            [{ id = "claude", expression = "(FILL(ci, 0) * ${var.bedrock_price_usd_per_mtok.claude_input} + FILL(co, 0) * ${var.bedrock_price_usd_per_mtok.claude_output}) / 1000000", label = "Claude" }],
-            [{ id = "embedding", expression = "FILL(ei, 0) * ${var.bedrock_price_usd_per_mtok.embedding_input} / 1000000", label = "Embeddings" }],
-            [{ id = "total", expression = "claude + embedding", label = "Total" }],
-          ]
-        }
-      },
-
       # --- Per-feature split from logs ---
       {
         # ChatService logs one "Chat answered" line per question; the
@@ -231,7 +221,7 @@ resource "aws_cloudwatch_dashboard" "ai" {
         # SemanticExtraction steps of each Extraction execution.
         type   = "log"
         x      = 0
-        y      = 24
+        y      = 23
         width  = 24
         height = 6
         properties = {
