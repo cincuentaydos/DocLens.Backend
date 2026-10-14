@@ -6,7 +6,11 @@
 # numbers are classification + extraction + chat combined. The per-feature
 # split below comes from the API Lambda's own log lines instead.
 
+data "aws_region" "current" {}
+
 locals {
+  dashboard_region = data.aws_region.current.name
+
   # Claude is invoked through a cross-region inference profile, and that
   # profile ID is the ModelId dimension. The embedding model is invoked by
   # the Knowledge Base by foundation-model ARN, and that ARN is its ModelId.
