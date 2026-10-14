@@ -1,0 +1,45 @@
+meta {
+  name: Upload Acta Junta
+  type: http
+  seq: 9
+}
+
+put {
+  url: {{uploadUrl}}
+  body: text
+  auth: none
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+body:text {
+  ACTA DE LA JUNTA GENERAL EXTRAORDINARIA DE SOCIOS
+  LOGÍSTICA NORTE S.A. — CIF A11223344
+  
+  En Bilbao, en el domicilio social sito en Gran Vía 50, 48011 Bilbao, siendo las 11:00 horas del 25 de septiembre de 2026, se reúne en primera convocatoria la Junta General Extraordinaria de Socios.
+  
+  ASISTENTES
+  Presentes o representados socios titulares del 82 % del capital social. Preside D. Íñigo Etxeberria Alonso, Presidente del Consejo de Administración, y actúa como Secretaria Dña. Ane Zubizarreta Gil.
+  
+  ORDEN DEL DÍA
+  1. Aprobación de la venta del 100 % de las acciones a Grupo Atlántico Inversiones S.L.
+  2. Cese y nombramiento de administradores.
+  3. Delegación de facultades.
+  
+  ACUERDOS
+  Primero. Se aprueba por mayoría del 78 % del capital presente la operación de venta, condicionada a la renovación del arrendamiento de la nave principal.
+  Segundo. Se acepta la dimisión de D. Íñigo Etxeberria Alonso como Presidente y se nombra administrador único a D. Javier Ortega Prieto, con DNI 45678901M.
+  Tercero. Se faculta a la Secretaria para elevar a público los acuerdos adoptados e inscribirlos en el Registro Mercantil de Bizkaia.
+  
+  Sin más asuntos que tratar, se levanta la sesión a las 12:30 horas, de la que se extiende la presente acta, que es aprobada por unanimidad de los asistentes.
+}
+
+tests {
+  // Run "Smoke / Prepare Upload" right before this — it sets uploadUrl,
+  // valid for 15 minutes. All personal data below is fictitious.
+  test("S3 accepted the upload", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

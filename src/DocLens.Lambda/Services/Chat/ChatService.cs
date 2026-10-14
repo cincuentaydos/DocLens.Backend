@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Amazon.BedrockAgentRuntime;
 using Amazon.BedrockAgentRuntime.Model;
 using Amazon.BedrockRuntime;
@@ -14,6 +15,14 @@ namespace DocLens.Lambda.Services.Chat;
 public class ChatService : IChatService
 {
     private const string Database = "doclens";
+    private const int NumberOfResults = 5;
+
+    // Placeholders written by ComprehendPiiRedactionService: [PARTE_A], [FECHA_1]...
+    private static readonly Regex PlaceholderPattern = new(@"\[([A-Z]+_[A-Z0-9]+)\]", RegexOptions.Compiled);
+    // Leftover document tags on bracketed tokens that had no PII mapping.
+    private static readonly Regex DocumentTagPattern = new(@"\[D\d+_", RegexOptions.Compiled);
+    // Last line of the model's answer: "FUENTES: 1, 3" or "FUENTES: ninguna".
+    private static readonly Regex SourcesLinePattern = new(@"\n?\s*FUENTES:\s*(?<ids>[^\n]*)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private readonly IAmazonBedrockAgentRuntime _bedrockAgentRuntime;
     private readonly IAmazonBedrockRuntime _bedrockRuntime;
@@ -60,6 +69,7 @@ public class ChatService : IChatService
             {
                 VectorSearchConfiguration = new KnowledgeBaseVectorSearchConfiguration
                 {
+                    NumberOfResults = NumberOfResults,
                     // empresa_id is the only isolation enforced here — see
                     // the "not ADR-001-complete" note on IChatService.
                     Filter = new Amazon.BedrockAgentRuntime.Model.RetrievalFilter
@@ -70,37 +80,61 @@ public class ChatService : IChatService
             }
         }, cancellationToken);
 
-        var chunks = retrieval.RetrievalResults;
-        var documentoIds = chunks
-            .Select(r => TryExtractDocumentoId(r.Location?.S3Location?.Uri))
+        var chunks = retrieval.RetrievalResults
+            .Select(r => (DocumentoId: TryExtractDocumentoId(r.Location?.S3Location?.Uri), Text: r.Content?.Text ?? ""))
+            .ToList();
+
+        // Placeholders are only unique within a document — [PARTE_A] in one
+        // is a different person from [PARTE_A] in another. Tag each with its
+        // document (D1, D2...) before the model sees it, so the answer can be
+        // un-redacted with the right document's mappings.
+        var tagByDocumentoId = chunks
+            .Select(c => c.DocumentoId)
+            .Where(id => id is not null)
+            .Distinct()
+            .Select((id, i) => (Id: id!, Tag: $"D{i + 1}"))
+            .ToDictionary(x => x.Id, x => x.Tag);
+
+        var context = string.Join("\n\n---\n\n", chunks.Select((c, i) =>
+            $"[{i + 1}]\n{TagPlaceholders(c.Text, c.DocumentoId is null ? null : tagByDocumentoId[c.DocumentoId])}"));
+
+        var rawAnswer = await GenerateAsync(pregunta, context, cancellationToken);
+        var (answerText, citedChunks) = SplitSources(rawAnswer, chunks.Count);
+
+        // Only the documents the model actually cited — not every chunk
+        // Retrieve returned (it always returns its top N, related or not).
+        var fuentes = citedChunks
+            .Select(n => chunks[n - 1].DocumentoId)
             .Where(id => id is not null)
             .Distinct()
             .Cast<string>()
             .ToList();
 
-        var context = string.Join("\n\n---\n\n", chunks.Select(r => r.Content?.Text ?? ""));
-
-        var rawAnswer = await GenerateAsync(pregunta, context, cancellationToken);
-
-        var piiMap = await LoadPiiMappingsAsync(documentoIds, cancellationToken);
-        var answer = SubstitutePlaceholders(rawAnswer, piiMap);
+        var piiMap = await LoadPiiMappingsAsync(tagByDocumentoId, cancellationToken);
+        var answer = DocumentTagPattern.Replace(SubstitutePlaceholders(answerText, piiMap), "[");
 
         _logger.LogInformation(
-            "Chat answered for tenant {TenantId}, {ChunkCount} chunks from {DocumentCount} documents",
-            tenantId, chunks.Count, documentoIds.Count);
+            "Chat answered for tenant {TenantId}, {ChunkCount} chunks from {DocumentCount} documents, {CitedCount} cited",
+            tenantId, chunks.Count, tagByDocumentoId.Count, fuentes.Count);
 
         return new ChatResponse
         {
             Respuesta = answer,
-            Fuentes = documentoIds
+            Fuentes = fuentes
         };
     }
 
     private async Task<string> GenerateAsync(string pregunta, string context, CancellationToken cancellationToken)
     {
         var prompt = $"""
-            Answer the question using only the context below. If the context doesn't
-            contain the answer, say so — never invent information not present in it.
+            Answer the question using only the numbered context fragments below. If
+            they don't contain the answer, say so — never invent information not
+            present in them. Keep bracketed placeholders such as [D1_PARTE_A]
+            exactly as written.
+
+            After the answer, add one last line listing the numbers of the
+            fragments you actually used, e.g. "FUENTES: 1, 3" — or "FUENTES: ninguna"
+            if none of them answered the question.
 
             Context:
             {context}
@@ -137,13 +171,37 @@ public class ChatService : IChatService
         return idx >= 0 && idx + 1 < parts.Length ? parts[idx + 1] : null;
     }
 
+    private static string TagPlaceholders(string text, string? tag) =>
+        tag is null ? text : PlaceholderPattern.Replace(text, m => $"[{tag}_{m.Groups[1].Value}]");
+
+    // Splits off the trailing "FUENTES: ..." line. Returns the 1-based chunk
+    // numbers cited, ignoring anything out of range; no line at all means
+    // no sources (logged by the caller's count, not guessed).
+    private static (string Answer, IReadOnlyList<int> Cited) SplitSources(string rawAnswer, int chunkCount)
+    {
+        var match = SourcesLinePattern.Match(rawAnswer);
+        if (!match.Success)
+        {
+            return (rawAnswer.Trim(), []);
+        }
+
+        var cited = Regex.Matches(match.Groups["ids"].Value, @"\d+")
+            .Select(m => int.Parse(m.Value))
+            .Where(n => n >= 1 && n <= chunkCount)
+            .Distinct()
+            .ToList();
+
+        return (rawAnswer[..match.Index].Trim(), cited);
+    }
+
+    // Keyed by the document-tagged placeholder ([D1_PARTE_A]), so two
+    // documents' [PARTE_A] can never overwrite each other.
     private async Task<Dictionary<string, string>> LoadPiiMappingsAsync(
-        IReadOnlyList<string> documentoIds, CancellationToken cancellationToken)
+        IReadOnlyDictionary<string, string> tagByDocumentoId, CancellationToken cancellationToken)
     {
         var map = new Dictionary<string, string>();
-        if (documentoIds.Count == 0) return map;
 
-        foreach (var documentoId in documentoIds)
+        foreach (var (documentoId, tag) in tagByDocumentoId)
         {
             var response = await _rdsData.ExecuteStatementAsync(new ExecuteStatementRequest
             {
@@ -156,7 +214,7 @@ public class ChatService : IChatService
 
             foreach (var record in response.Records)
             {
-                map[record[0].StringValue!] = record[1].StringValue!;
+                map[TagPlaceholders(record[0].StringValue!, tag)] = record[1].StringValue!;
             }
         }
 

@@ -1,0 +1,47 @@
+meta {
+  name: Upload Sentencia
+  type: http
+  seq: 6
+}
+
+put {
+  url: {{uploadUrl}}
+  body: text
+  auth: none
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+body:text {
+  JUZGADO DE PRIMERA INSTANCIA N.º 3 DE MADRID
+  Procedimiento: Juicio ordinario 512/2025
+  
+  SENTENCIA N.º 187/2026
+  
+  En Madrid, a 22 de septiembre de 2026.
+  
+  Vistos por la Ilma. Sra. Dña. Beatriz Campos Serrano, Magistrada-Juez del Juzgado de Primera Instancia n.º 3 de Madrid, los presentes autos de juicio ordinario seguidos a instancia de D. Fernando Iglesias Romero, con domicilio en Calle Princesa 40, 28008 Madrid, contra Seguros Meridiano S.A., sobre reclamación de indemnización derivada de contrato de seguro.
+  
+  ANTECEDENTES DE HECHO
+  Primero. La parte actora interpuso demanda el 14 de octubre de 2025 reclamando 36.000 EUR por los daños sufridos en su vivienda a consecuencia de un incendio.
+  Segundo. La demandada se opuso alegando la exclusión de cobertura prevista en la póliza.
+  
+  FUNDAMENTOS DE DERECHO
+  Primero. Conforme al artículo 3 de la Ley 50/1980, de Contrato de Seguro, las cláusulas limitativas deben ser destacadas y específicamente aceptadas por escrito, lo que no consta en el presente caso.
+  Segundo. Acreditado el siniestro y su cuantía mediante el informe pericial, procede estimar íntegramente la demanda.
+  
+  FALLO
+  Estimo la demanda interpuesta por D. Fernando Iglesias Romero y condeno a Seguros Meridiano S.A. a abonarle 36.000 EUR, más los intereses del artículo 20 de la Ley de Contrato de Seguro, con imposición de costas a la demandada.
+  
+  Contra esta sentencia cabe recurso de apelación en el plazo de veinte días.
+}
+
+tests {
+  // Run "Smoke / Prepare Upload" right before this — it sets uploadUrl,
+  // valid for 15 minutes. All personal data below is fictitious.
+  test("S3 accepted the upload", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

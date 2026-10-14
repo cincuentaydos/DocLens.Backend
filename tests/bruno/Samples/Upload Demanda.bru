@@ -1,0 +1,45 @@
+meta {
+  name: Upload Demanda
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{uploadUrl}}
+  body: text
+  auth: none
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+body:text {
+  AL JUZGADO DE PRIMERA INSTANCIA DE VALENCIA QUE POR TURNO CORRESPONDA
+  
+  Dña. Lucía Navarro Pérez, Procuradora de los Tribunales, en nombre y representación de D. Andrés Molina Ortiz, con DNI 23456789K y domicilio en Calle Colón 15, 2.º, 46004 Valencia, bajo la dirección letrada de D. Pablo Herrera Molina, ante el Juzgado comparezco y, como mejor proceda en Derecho, DIGO:
+  
+  Que mediante el presente escrito interpongo DEMANDA DE JUICIO VERBAL EN RECLAMACIÓN DE CANTIDAD contra Reformas Levante S.L., con CIF B98765432 y domicilio social en Avenida del Puerto 120, 46023 Valencia, en reclamación de 4.850 EUR, con base en los siguientes
+  
+  HECHOS
+  Primero. El 10 de marzo de 2026 mi representado contrató con la demandada la reforma de su cocina por un precio de 9.700 EUR, abonando un anticipo del 50 % mediante transferencia desde la cuenta ES21 1465 0100 9917 0012 3456.
+  Segundo. La demandada abandonó la obra el 2 de mayo de 2026 sin ejecutar los trabajos pactados.
+  Tercero. Mi representado requirió el pago mediante burofax de 20 de junio de 2026, sin obtener respuesta.
+  
+  FUNDAMENTOS DE DERECHO
+  I. Competencia: artículo 45 de la Ley de Enjuiciamiento Civil.
+  II. Procedimiento: artículo 250.2 LEC, por razón de la cuantía.
+  III. Fondo: artículos 1101 y 1124 del Código Civil.
+  
+  SUPLICO AL JUZGADO que tenga por presentada esta demanda y, previos los trámites legales, dicte sentencia por la que se condene a la demandada al pago de 4.850 EUR más los intereses legales y las costas.
+  
+  En Valencia, a 8 de septiembre de 2026.
+}
+
+tests {
+  // Run "Smoke / Prepare Upload" right before this — it sets uploadUrl,
+  // valid for 15 minutes. All personal data below is fictitious.
+  test("S3 accepted the upload", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

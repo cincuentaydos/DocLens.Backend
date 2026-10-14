@@ -2,6 +2,7 @@ using Amazon.EventBridge;
 using Amazon.EventBridge.Model;
 using Amazon.RDSDataService;
 using Amazon.RDSDataService.Model;
+using Amazon.S3;
 using DocLens.Lambda.Context;
 using DocLens.Lambda.Models.Requests;
 using DocLens.Lambda.Services.Review;
@@ -68,7 +69,9 @@ public static class DocumentEndpoints
         int versionNumber,
         ITenantContext tenantContext,
         IAmazonRDSDataService rdsData,
+        IAmazonS3 s3,
         IConfiguration configuration,
+        ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
         var response = await rdsData.ExecuteStatementAsync(new ExecuteStatementRequest
@@ -99,6 +102,9 @@ public static class DocumentEndpoints
         }
 
         var record = response.Records[0];
+        var textoRedactado = await TryReadRedactedTextAsync(
+            s3, configuration, logger, tenantContext.TenantId, documentId, versionNumber, cancellationToken);
+
         return Results.Ok(new
         {
             documentId,
@@ -119,8 +125,49 @@ public static class DocumentEndpoints
             // just the extracted campos (which come from the original text).
             pii = record[7].StringValue is null
                 ? (object?)null
-                : System.Text.Json.JsonDocument.Parse(record[7].StringValue!).RootElement
+                : System.Text.Json.JsonDocument.Parse(record[7].StringValue!).RootElement,
+            // The exact text Bedrock KB ingests on approval — null until
+            // DetectAndRedactPII has written it (or if KB_SOURCE_BUCKET
+            // isn't wired into this Lambda yet).
+            textoRedactado
         });
+    }
+
+    // Same key DetectAndRedactPII writes: {tenantId}/documents/{documentoId}/v{n}.txt
+    // in kb_source. Never throws — the redacted text is a review aid, so its
+    // absence shouldn't fail the whole version lookup.
+    private static async Task<string?> TryReadRedactedTextAsync(
+        IAmazonS3 s3,
+        IConfiguration configuration,
+        ILogger logger,
+        string tenantId,
+        string documentId,
+        int versionNumber,
+        CancellationToken cancellationToken)
+    {
+        var bucket = configuration["KB_SOURCE_BUCKET"];
+        if (string.IsNullOrEmpty(bucket))
+        {
+            return null;
+        }
+
+        var key = $"{tenantId}/documents/{documentId}/v{versionNumber}.txt";
+        try
+        {
+            using var obj = await s3.GetObjectAsync(bucket, key, cancellationToken);
+            using var reader = new StreamReader(obj.ResponseStream, System.Text.Encoding.UTF8);
+            return await reader.ReadToEndAsync(cancellationToken);
+        }
+        catch (AmazonS3Exception ex) when (ex.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Forbidden)
+        {
+            // NotFound: not redacted yet. Forbidden: S3 answers a missing key
+            // with 403 when the caller lacks s3:ListBucket, so both mean the
+            // same thing here.
+            logger.LogInformation(
+                "No redacted text for document {DocumentId} v{VersionNumber}, tenant {TenantId} ({StatusCode})",
+                documentId, versionNumber, tenantId, ex.StatusCode);
+            return null;
+        }
     }
 
     private static async Task<IResult> ListPendingReviews(

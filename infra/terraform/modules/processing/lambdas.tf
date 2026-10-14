@@ -32,6 +32,7 @@ resource "aws_lambda_function" "api" {
       COGNITO_ENDPOINT  = var.user_pool_endpoint
       CHAT_MODEL_ID     = var.chat_model_id
       KNOWLEDGE_BASE_ID = var.knowledge_base_id
+      KB_SOURCE_BUCKET  = var.kb_source_bucket_id
     }
   }
 

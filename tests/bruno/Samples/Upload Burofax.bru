@@ -1,0 +1,46 @@
+meta {
+  name: Upload Burofax
+  type: http
+  seq: 8
+}
+
+put {
+  url: {{uploadUrl}}
+  body: text
+  auth: none
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+body:text {
+  BUROFAX — REQUERIMIENTO FEHACIENTE DE PAGO
+  
+  Remitente: Bufete Martínez & Asociados S.L., Calle Serrano 45, 28001 Madrid, en nombre de su cliente D. Javier Ortega Prieto.
+  Destinatario: D. Sergio Castro Bermúdez, Calle de Toledo 88, 1.º C, 28005 Madrid.
+  
+  Madrid, 1 de octubre de 2026.
+  
+  Muy Sr. nuestro:
+  
+  Actuamos en nombre de D. Javier Ortega Prieto, quien le prestó la cantidad de 12.000 EUR el 15 de enero de 2026, según consta en el documento privado de préstamo firmado por ambas partes, con obligación de devolución antes del 15 de julio de 2026.
+  
+  Vencido dicho plazo sin que se haya producido el pago, por medio del presente le REQUERIMOS para que, en el plazo de DIEZ DÍAS naturales desde la recepción de esta comunicación, abone la cantidad adeudada mediante transferencia a la cuenta ES80 2038 1150 3060 0012 7788, titularidad de nuestro cliente.
+  
+  En caso contrario, nos veremos obligados a ejercitar las acciones judiciales oportunas, con la consiguiente reclamación de intereses y costas.
+  
+  Para cualquier aclaración puede contactar con el letrado responsable en el correo elena.ruiz@example.com o en el teléfono 910 123 456.
+  
+  Atentamente,
+  Elena Ruiz Castillo
+  Abogada
+}
+
+tests {
+  // Run "Smoke / Prepare Upload" right before this — it sets uploadUrl,
+  // valid for 15 minutes. All personal data below is fictitious.
+  test("S3 accepted the upload", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

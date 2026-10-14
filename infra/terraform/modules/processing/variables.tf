@@ -103,3 +103,22 @@ variable "chat_model_id" {
   type        = string
   default     = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
 }
+
+# On-demand Bedrock prices used only for the AI dashboard's cost estimate
+# (dashboard_ai.tf). Taken from the AWS Price List API for eu-west-1 on
+# 2026-10-14 — check https://aws.amazon.com/bedrock/pricing/ before trusting
+# them. Claude's are the "Regional" rates, which apply to the eu. (geo)
+# cross-region inference profile; a global. profile is ~10% cheaper.
+variable "bedrock_price_usd_per_mtok" {
+  description = "USD per million tokens for the AI dashboard's cost estimate, keyed by model/direction."
+  type = object({
+    claude_input    = number
+    claude_output   = number
+    embedding_input = number
+  })
+  default = {
+    claude_input    = 1.10
+    claude_output   = 5.50
+    embedding_input = 0.026004
+  }
+}

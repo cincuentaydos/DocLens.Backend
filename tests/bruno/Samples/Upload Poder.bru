@@ -1,0 +1,43 @@
+meta {
+  name: Upload Poder Notarial
+  type: http
+  seq: 7
+}
+
+put {
+  url: {{uploadUrl}}
+  body: text
+  auth: none
+}
+
+headers {
+  Content-Type: text/plain
+}
+
+body:text {
+  ESCRITURA DE PODER GENERAL PARA PLEITOS
+  
+  NÚMERO MIL CUATROCIENTOS DOCE.
+  
+  En Sevilla, a 5 de octubre de 2026.
+  
+  Ante mí, D. Ignacio Varela Soto, Notario del Ilustre Colegio de Andalucía, con residencia en Sevilla,
+  
+  COMPARECE
+  Dña. Rosa Delgado Marín, mayor de edad, con DNI 34567890L, domiciliada en Calle Sierpes 22, 41004 Sevilla, teléfono 633 456 789.
+  
+  OTORGA
+  Que confiere PODER GENERAL PARA PLEITOS, tan amplio y bastante como en Derecho se requiera, a favor de los Procuradores de los Tribunales D. Miguel Ángel Rubio Peña y Dña. Lucía Navarro Pérez, y de los Letrados D. Pablo Herrera Molina y Dña. Elena Ruiz Castillo, para que, indistintamente, la representen ante toda clase de Juzgados y Tribunales, interpongan demandas y recursos, se allanen, transijan y desistan.
+  
+  El presente poder se otorga por tiempo indefinido y será válido hasta su revocación expresa.
+  
+  Así lo otorga la compareciente, a quien leo íntegramente esta escritura, y firma conmigo, el Notario, que doy fe.
+}
+
+tests {
+  // Run "Smoke / Prepare Upload" right before this — it sets uploadUrl,
+  // valid for 15 minutes. All personal data below is fictitious.
+  test("S3 accepted the upload", function () {
+    expect(res.getStatus()).to.equal(200);
+  });
+}

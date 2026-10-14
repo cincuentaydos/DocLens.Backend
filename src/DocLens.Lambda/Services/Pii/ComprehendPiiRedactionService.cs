@@ -30,6 +30,15 @@ public class ComprehendPiiRedactionService : IPiiRedactionService
 
     private const double MinConfidence = 0.5;
 
+    // Spanish company tax ID (CIF): an entity-type letter, 7 digits and a
+    // control digit or letter. Comprehend tends to tag it as
+    // BANK_ACCOUNT_NUMBER, but it identifies a legal person, not a natural
+    // one — out of GDPR's scope and useful context for the KB. Personal
+    // IDs stay redacted: DNI starts with a digit and NIE with X/Y/Z, and
+    // K/L/M (other personal NIFs) are deliberately left out of this class.
+    private static readonly System.Text.RegularExpressions.Regex CompanyTaxIdPattern =
+        new(@"^[ABCDEFGHJNPQRSUVW]\d{7}[0-9A-J]$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
     private readonly IAmazonComprehend _comprehend;
     private readonly IAmazonRDSDataService _rdsData;
     private readonly ILogger<ComprehendPiiRedactionService> _logger;
@@ -70,6 +79,7 @@ public class ComprehendPiiRedactionService : IPiiRedactionService
 
         var entities = response.Entities
             .Where(e => e.Score >= MinConfidence)
+            .Where(e => !IsCompanyTaxId(textToScan, e))
             .OrderByDescending(e => e.BeginOffset) // reverse order so earlier offsets stay valid while replacing
             .ToList();
 
@@ -159,6 +169,15 @@ public class ComprehendPiiRedactionService : IPiiRedactionService
         };
 
         await _rdsData.BatchExecuteStatementAsync(request, cancellationToken);
+    }
+
+    private static bool IsCompanyTaxId(string text, PiiEntity entity)
+    {
+        if (entity.BeginOffset is not { } begin || entity.EndOffset is not { } end) return false;
+        if (begin < 0 || end > text.Length || begin >= end) return false;
+
+        var value = text[begin..end].Replace(" ", "").Replace("-", "").ToUpperInvariant();
+        return CompanyTaxIdPattern.IsMatch(value);
     }
 
     private static string TruncateToByteLimit(string text, int maxBytes)

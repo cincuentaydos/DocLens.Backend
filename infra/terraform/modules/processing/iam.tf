@@ -83,6 +83,15 @@ resource "aws_iam_role_policy" "api" {
         Resource = "${var.document_bucket_arn}/*"
       },
       {
+        # GET /documents/{id}/versions/{n} returns the redacted text the KB
+        # will ingest (textoRedactado) so the reviewer can check it. Read
+        # only; kms:Decrypt comes from aurora_data_api_statements (same CMK).
+        Sid      = "S3ReadRedacted"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject"]
+        Resource = "${var.kb_source_bucket_arn}/*"
+      },
+      {
         # The presigned URL is signed with this role's credentials, so this
         # role (not the browser that eventually PUTs the object) is who
         # needs kms:GenerateDataKey for the bucket's default SSE-KMS to apply.

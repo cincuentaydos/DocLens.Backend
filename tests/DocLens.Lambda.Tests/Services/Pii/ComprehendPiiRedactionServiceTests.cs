@@ -81,6 +81,45 @@ public class ComprehendPiiRedactionServiceTests
     }
 
     [Fact]
+    public async Task RedactAsync_KeepsCompanyTaxIdTaggedAsBankAccount()
+    {
+        const string text = "Emisor: Bufete S.L., CIF B12345678, cuenta ES91 2100 0418 4502 0005 1332.";
+        var cifStart = text.IndexOf("B12345678", StringComparison.Ordinal);
+        var ibanStart = text.IndexOf("ES91", StringComparison.Ordinal);
+
+        _comprehend.DetectPiiEntitiesAsync(Arg.Any<DetectPiiEntitiesRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new DetectPiiEntitiesResponse
+            {
+                Entities =
+                [
+                    new PiiEntity { Type = PiiEntityType.BANK_ACCOUNT_NUMBER, Score = 0.9f, BeginOffset = cifStart, EndOffset = cifStart + "B12345678".Length },
+                    new PiiEntity { Type = PiiEntityType.INTERNATIONAL_BANK_ACCOUNT_NUMBER, Score = 0.99f, BeginOffset = ibanStart, EndOffset = ibanStart + "ES91 2100 0418 4502 0005 1332".Length }
+                ]
+            });
+
+        var result = await _sut.RedactAsync("11111111-1111-1111-1111-111111111111", text);
+
+        Assert.Equal("Emisor: Bufete S.L., CIF B12345678, cuenta [DATO_1].", result.RedactedText);
+        Assert.Equal(1, result.EntitiesFound);
+    }
+
+    [Fact]
+    public async Task RedactAsync_StillRedactsPersonalDni()
+    {
+        const string text = "DNI 12345678Z del arrendatario.";
+
+        _comprehend.DetectPiiEntitiesAsync(Arg.Any<DetectPiiEntitiesRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new DetectPiiEntitiesResponse
+            {
+                Entities = [new PiiEntity { Type = PiiEntityType.BANK_ACCOUNT_NUMBER, Score = 0.9f, BeginOffset = 4, EndOffset = 13 }]
+            });
+
+        var result = await _sut.RedactAsync("11111111-1111-1111-1111-111111111111", text);
+
+        Assert.Equal("DNI [CUENTA_1] del arrendatario.", result.RedactedText);
+    }
+
+    [Fact]
     public async Task RedactAsync_IgnoresEntitiesBelowConfidenceThreshold()
     {
         const string text = "Fecha probable: quizas manana.";
