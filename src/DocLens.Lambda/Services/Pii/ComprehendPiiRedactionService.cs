@@ -2,6 +2,7 @@ using Amazon.Comprehend;
 using Amazon.Comprehend.Model;
 using Amazon.RDSDataService;
 using Amazon.RDSDataService.Model;
+using AWS.Lambda.Powertools.Tracing;
 
 namespace DocLens.Lambda.Services.Pii;
 
@@ -60,6 +61,7 @@ public class ComprehendPiiRedactionService : IPiiRedactionService
             ?? throw new InvalidOperationException("AURORA_SECRET is not set.");
     }
 
+    [Tracing(CaptureMode = TracingCaptureMode.Error)]
     public async Task<PiiRedactionResult> RedactAsync(
         string documentoId, string rawText, CancellationToken cancellationToken = default)
     {

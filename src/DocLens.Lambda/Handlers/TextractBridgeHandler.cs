@@ -4,6 +4,7 @@ using Amazon.S3.Model;
 using Amazon.StepFunctions;
 using Amazon.StepFunctions.Model;
 using DocLens.Lambda.Services.Ocr;
+using AWS.Lambda.Powertools.Tracing;
 
 namespace DocLens.Lambda.Handlers;
 
@@ -35,6 +36,7 @@ public class TextractBridgeHandler
             ?? throw new InvalidOperationException("KB_SOURCE_BUCKET is not set.");
     }
 
+    [Tracing(CaptureMode = TracingCaptureMode.Error)]
     public async Task<object> HandleAsync(JsonElement snsEvent, CancellationToken cancellationToken = default)
     {
         foreach (var record in snsEvent.GetProperty("Records").EnumerateArray())

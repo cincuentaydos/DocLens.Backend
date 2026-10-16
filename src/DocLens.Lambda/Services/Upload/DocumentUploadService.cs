@@ -6,6 +6,7 @@ using DocLens.Lambda.Context;
 using DocLens.Lambda.Models;
 using DocLens.Lambda.Models.Requests;
 using DocLens.Lambda.Models.Responses;
+using AWS.Lambda.Powertools.Tracing;
 
 namespace DocLens.Lambda.Services.Upload;
 
@@ -43,6 +44,7 @@ public class DocumentUploadService : IDocumentUploadService
             ?? throw new InvalidOperationException("AURORA_SECRET is not set.");
     }
 
+    [Tracing(CaptureMode = TracingCaptureMode.Error)]
     public async Task<PrepareDocumentUploadResult> PrepareUploadAsync(
         PrepareDocumentUploadRequest request,
         CancellationToken cancellationToken = default)

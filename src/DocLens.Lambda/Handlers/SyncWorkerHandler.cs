@@ -1,5 +1,6 @@
 using System.Text.Json;
 using DocLens.Lambda.Services.Sync;
+using AWS.Lambda.Powertools.Tracing;
 
 namespace DocLens.Lambda.Handlers;
 
@@ -17,6 +18,7 @@ public class SyncWorkerHandler
         _logger = logger;
     }
 
+    [Tracing(CaptureMode = TracingCaptureMode.Error)]
     public async Task<object> HandleAsync(JsonElement evt, CancellationToken cancellationToken = default)
     {
         var action = evt.GetProperty("action").GetString();

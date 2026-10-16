@@ -67,6 +67,17 @@ resource "aws_iam_role_policy" "sfn_extraction" {
           "logs:DescribeResourcePolicies", "logs:DescribeLogGroups"
         ]
         Resource = "*"
+      },
+      {
+        # tracing_configuration below — X-Ray doesn't support resource-level
+        # permissions, hence "*".
+        Sid    = "XRay"
+        Effect = "Allow"
+        Action = [
+          "xray:PutTraceSegments", "xray:PutTelemetryRecords",
+          "xray:GetSamplingRules", "xray:GetSamplingTargets"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -76,6 +87,12 @@ resource "aws_sfn_state_machine" "document_extraction" {
   name     = "doclens-document-extraction-${var.environment}"
   role_arn = aws_iam_role.sfn_extraction.arn
   type     = "STANDARD"
+
+  # One X-Ray trace per execution, linked to the worker Lambdas' own
+  # (Active) traces — the pipeline shows up end to end in the trace map.
+  tracing_configuration {
+    enabled = true
+  }
 
   logging_configuration {
     log_destination        = "${aws_cloudwatch_log_group.sfn_extraction.arn}:*"
@@ -227,6 +244,17 @@ resource "aws_iam_role_policy" "sfn_review" {
           "logs:DescribeResourcePolicies", "logs:DescribeLogGroups"
         ]
         Resource = "*"
+      },
+      {
+        # tracing_configuration below — X-Ray doesn't support resource-level
+        # permissions, hence "*".
+        Sid    = "XRay"
+        Effect = "Allow"
+        Action = [
+          "xray:PutTraceSegments", "xray:PutTelemetryRecords",
+          "xray:GetSamplingRules", "xray:GetSamplingTargets"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -236,6 +264,12 @@ resource "aws_sfn_state_machine" "document_review" {
   name     = "doclens-document-review-${var.environment}"
   role_arn = aws_iam_role.sfn_review.arn
   type     = "STANDARD"
+
+  # One X-Ray trace per execution, linked to the worker Lambdas' own
+  # (Active) traces — the pipeline shows up end to end in the trace map.
+  tracing_configuration {
+    enabled = true
+  }
 
   logging_configuration {
     log_destination        = "${aws_cloudwatch_log_group.sfn_review.arn}:*"
@@ -360,6 +394,17 @@ resource "aws_iam_role_policy" "sfn_kb_sync" {
           "logs:DescribeResourcePolicies", "logs:DescribeLogGroups"
         ]
         Resource = "*"
+      },
+      {
+        # tracing_configuration below — X-Ray doesn't support resource-level
+        # permissions, hence "*".
+        Sid    = "XRay"
+        Effect = "Allow"
+        Action = [
+          "xray:PutTraceSegments", "xray:PutTelemetryRecords",
+          "xray:GetSamplingRules", "xray:GetSamplingTargets"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -369,6 +414,12 @@ resource "aws_sfn_state_machine" "document_kb_sync" {
   name     = "doclens-document-kb-sync-${var.environment}"
   role_arn = aws_iam_role.sfn_kb_sync.arn
   type     = "STANDARD"
+
+  # One X-Ray trace per execution, linked to the worker Lambdas' own
+  # (Active) traces — the pipeline shows up end to end in the trace map.
+  tracing_configuration {
+    enabled = true
+  }
 
   logging_configuration {
     log_destination        = "${aws_cloudwatch_log_group.sfn_kb_sync.arn}:*"
